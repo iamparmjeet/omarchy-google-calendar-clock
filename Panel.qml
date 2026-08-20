@@ -273,7 +273,20 @@ Panel {
     return u.startsWith("file://") ? u.slice(7) : u
   }
 
-  property string primaryCalendarId: root.state.calendars.length > 0 ? root.state.calendars[0].id : "primary"
+  // The calendar new events go into: the calendar marked primary by Google,
+  // falling back to the user's own (email-shaped) calendar, then the first.
+  // Read-only calendars (holidays, birthdays) are never the write target.
+  readonly property string primaryCalendarId: {
+    var list = root.state.calendars
+    var fallback = ""
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i]
+      if (c.primary === true) return c.id
+      if (fallback === "" && c.id.indexOf("@") !== -1 && c.id.indexOf("#") === -1) fallback = c.id
+    }
+    if (fallback !== "") return fallback
+    return list.length > 0 ? list[0].id : "primary"
+  }
   property string primaryTasklistId: root.state.tasklists.length > 0 ? root.state.tasklists[0].id : "@default"
 
   property string mutateOutput: ""

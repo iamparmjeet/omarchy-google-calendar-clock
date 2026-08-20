@@ -214,3 +214,25 @@ the account was added as an OAuth "Test user" in the console (Testing-mode app).
 
 **Next:** Phase 8 — Integration (auth-expired, offline, malformed, DST,
 recurrence, manual sync, shell lifecycle).
+
+---
+
+## Phase 7 fix — new-event wrote to a read-only calendar
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-21
+
+**Problem:** Adding a new event failed. `primaryCalendarId` resolved to
+`state.calendars[0]`, which was "Holidays in India" — a read-only Google
+holiday calendar — so inserts were rejected.
+
+**Fix:**
+- `sync/sync.py` — `build_state` now records `primary: bool` per calendar
+  (from Google's `primary` flag on the CalendarListEntry).
+- `sync/schema.py` — `primary` validated as a boolean.
+- `Panel.qml` — `primaryCalendarId` now prefers the calendar Google marks
+  primary, else the user's email-shaped calendar, else the first. Read-only
+  group/holiday calendars are never chosen as the write target.
+
+**Verified:** live quick-add writes to `iamparmjeetmishra@gmail.com` (primary)
+and deletes cleanly; `sync.py` reports ok.

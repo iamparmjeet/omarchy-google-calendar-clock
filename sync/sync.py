@@ -153,6 +153,7 @@ def build_state(
                 "name": c.get("summary") or c.get("summaryOverride") or c.get("id", ""),
                 "color": c.get("backgroundColor") or "",
                 "visible": True,
+                "primary": bool(c.get("primary")),
             }
             for c in calendars
         ],

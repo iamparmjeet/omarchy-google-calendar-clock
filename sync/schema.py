@@ -137,6 +137,8 @@ def validate_calendar(cal: Any) -> list[str]:
         errors.append("missing name")
     if "visible" in cal and not isinstance(cal.get("visible"), bool):
         errors.append("visible must be a boolean")
+    if "primary" in cal and not isinstance(cal.get("primary"), bool):
+        errors.append("primary must be a boolean")
     return errors
 
 
