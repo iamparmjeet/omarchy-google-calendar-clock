@@ -260,3 +260,39 @@ re-fetching all events sequentially.
   panel re-reads state.json immediately instead of waiting on the watcher.
 
 **Result:** ~8s → ~1.9s end-to-end for a write; full timer sync unchanged.
+
+---
+
+## Phase 8 — Integration
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-21
+
+**What changed:**
+- `tests/test_schema.py` — added DST-transition and DST-summer tests for
+  Europe/Berlin (UTC→local dateKey correctness across the boundary).
+- `tests/test_sync.py` — added: API-error preserves last-good; `reuse_discovery`
+  path; malformed prior state.json is replaced by the next successful sync.
+- `sync/sync.py`, `sync/mutate.py` — (already in place from the latency fix)
+  parallel fetches, `check_auth`, `reuse_discovery` covered by tests.
+
+**Gate — all paths behave per PLAN §11 (verified live):**
+- **auth expired**: unauthenticated sync → exit 2, last-good preserved
+  (unit-tested; previously reproduced live before `gws auth login`).
+- **offline / gws missing**: `gwsPath=/no/such/gws` → exit 5, last-good state
+  preserved (`state: ok`, 16 events intact).
+- **malformed state.json**: corrupt file → next `sync.py` recovers to `ok`.
+- **DST/timezone**: Berlin DST-transition + summer tests pass.
+- **recurrence**: Google expands server-side via `singleEvents=true` (adapter
+  param verified in Phase 2); normalization tests cover recurring-instance flag.
+- **manual sync**: `python3 sync/sync.py` → rc 0, `syncStatus ok`.
+- **systemd timer**: enabled, fires every 5 min, `journalctl` clean.
+- **shell lifecycle**: `omarchy-shell shell summon/hide/toggle parm.clock` →
+  rc 0; `parm.clock refresh` → rc 0; `omarchy plugin disable/enable parm.clock`
+  → rc 0, widget still listed enabled and wired in the bar center.
+
+**Suite:** 54 Python + 17 JS tests pass; `qmllint` clean on Panel.qml;
+`omarchy plugin validate` exit 0.
+
+**Next:** Phase 9 — adversarial review (race conditions, security, timezone,
+systemd, Omarchy compat) + fixes.

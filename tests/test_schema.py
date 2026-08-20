@@ -59,6 +59,21 @@ class TestEventNormalization(unittest.TestCase):
         ev = schema.normalize_event(fx["timed_utc"], "primary", "Asia/Kolkata")
         self.assertEqual(ev["dateKey"], "2026-03-29")
 
+    def test_dst_transition_berlin(self):
+        # 2026-03-29T00:30:00Z = 01:30 CET (Europe/Berlin before DST kicks in
+        # at 01:00 UTC that morning) — same wall date.
+        fx = load_fixture("events.json")
+        ev = schema.normalize_event(fx["timed_utc"], "primary", "Europe/Berlin")
+        self.assertEqual(ev["dateKey"], "2026-03-29")
+
+    def test_dst_summer_berlin(self):
+        # 2026-07-20T22:30:00Z = 00:30 CEST the next local day (UTC+2).
+        raw = {"id": "x", "summary": "Late",
+               "start": {"dateTime": "2026-07-20T22:30:00Z", "timeZone": "UTC"},
+               "end": {"dateTime": "2026-07-20T23:00:00Z", "timeZone": "UTC"}}
+        ev = schema.normalize_event(raw, "primary", "Europe/Berlin")
+        self.assertEqual(ev["dateKey"], "2026-07-21")
+
     def test_allday(self):
         fx = load_fixture("events.json")
         ev = schema.normalize_event(fx["allday"], "primary", "Asia/Kolkata")

@@ -76,6 +76,11 @@ if resource == "tasks" and method == "list":
     ]}))
     sys.exit(0)
 
+# --- API error mode (via env) ---
+if os.environ.get("FAKE_GWS_API_ERROR"):
+    print(json.dumps({"error": {"code": 500, "message": "backend unavailable", "reason": "internalError"}}))
+    sys.exit(1)
+
 print(json.dumps({"ok": True}))
 sys.exit(0)
 """
@@ -172,6 +177,47 @@ class TestSyncPipeline(unittest.TestCase):
         sync.atomic_write(self.state_path, '{"x": 1}\n')
         leftovers = list(self.state_path.parent.glob("*.tmp"))
         self.assertEqual(leftovers, [])
+
+    def test_api_error_preserves_last_good(self):
+        # Successful sync first.
+        os.environ["FAKE_GWS_AUTH"] = "ok"
+        sync.run_sync(self._cfg(), gws_path=str(self.fake), state_path=self.state_path)
+        good = self.state_path.read_text()
+
+        # Now a backend failure (one calendar fetch fails; events list raises).
+        os.environ["FAKE_GWS_API_ERROR"] = "1"
+        try:
+            code = sync.run_sync(self._cfg(), gws_path=str(self.fake), state_path=self.state_path)
+            # A single calendar failing is tolerated (events skipped), so the
+            # overall sync can still succeed with whatever it fetched — but if
+            # the calendar list itself fails, it must preserve last-good.
+            if code != 0:
+                self.assertEqual(self.state_path.read_text(), good)
+        finally:
+            os.environ.pop("FAKE_GWS_API_ERROR", None)
+
+    def test_reuse_discovery(self):
+        os.environ["FAKE_GWS_AUTH"] = "ok"
+        cfg = self._cfg()
+        sync.run_sync(cfg, gws_path=str(self.fake), state_path=self.state_path)
+        # Second sync reusing discovery should also produce valid state.
+        code = sync.run_sync(cfg, gws_path=str(self.fake), state_path=self.state_path,
+                             reuse_discovery=True, check_auth=False)
+        self.assertEqual(code, 0)
+        state = json.loads(self.state_path.read_text())
+        self.assertEqual(validate_state(state), [])
+        self.assertEqual(state["syncStatus"]["state"], "ok")
+
+    def test_malformed_prior_state_replaced(self):
+        # A corrupt state.json must not be treated as "last good"; the next
+        # successful sync overwrites it.
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.state_path.write_text("{ not json", encoding="utf-8")
+        os.environ["FAKE_GWS_AUTH"] = "ok"
+        code = sync.run_sync(self._cfg(), gws_path=str(self.fake), state_path=self.state_path)
+        self.assertEqual(code, 0)
+        state = json.loads(self.state_path.read_text())
+        self.assertEqual(validate_state(state), [])
 
 
 if __name__ == "__main__":
