@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "parm.clock",
+  "name": "Google Calendar Clock",
+  "version": "1.0.0",
+  "author": "parm",
+  "description": "Clock with a calendar popup that shows and edits events from your Google Calendar (via khal + vdirsyncer)",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Google Calendar Clock",
+    "description": "Clock with a calendar popup that shows and edits events from your Google Calendar (via khal + vdirsyncer)",
+    "category": "Time",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.clock"
+  }
+}
