@@ -85,78 +85,8 @@ Panel {
   readonly property int weekColumnWidth: Style.space(32)
   readonly property int gutterWidth: Style.space(14)
 
-  // ---- Calendar events, synced from Google Calendar via khal/vdirsyncer.
-  //      fetch_events.py emits one JSON object per line; the panel keeps a
-  //      { dateKey: [event, ...] } index so grid cells can look up their
-  //      dots with a single hash read rather than scanning on every paint.
-  readonly property string fetchScript: {
-    var u = Qt.resolvedUrl("scripts/fetch_events.py").toString()
-    return u.startsWith("file://") ? u.slice(7) : u
-  }
-
-  property var events: ({})
-  property var agenda: []
-  property string eventsError: ""
-
-  function applyEvents(raw) {
-    var lines = String(raw || "").split("\n")
-    var index = {}
-    var list = []
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].trim()
-      if (line === "") continue
-      var ev
-      try { ev = JSON.parse(line) } catch (e) { continue }
-      if (!ev || !ev.startDate) continue
-      ev.days = Model.dayRange(ev.startDate, ev.endDate || ev.startDate)
-      for (var d = 0; d < ev.days.length; d++) {
-        var key = ev.days[d]
-        if (!index[key]) index[key] = []
-        index[key].push(ev)
-      }
-      list.push(ev)
-    }
-    // Sort the agenda by start date then time, all-day first.
-    list.sort(function(a, b) {
-      var d = a.startDate.localeCompare(b.startDate)
-      if (d !== 0) return d
-      if (a.allday && !b.allday) return -1
-      if (!a.allday && b.allday) return 1
-      return (a.startTime || "").localeCompare(b.startTime || "")
-    })
-    root.events = index
-    root.agenda = list
-  }
-
-  function eventsOn(key) {
-    return root.events[key] || []
-  }
-
-  function refreshEvents() {
-    if (eventsProc.running) return
-    root.eventsError = ""
-    eventsProc.running = true
-  }
-
-  // The agenda below the grid lists events in the month being viewed; the
-  // dots are driven by the same `events` index, keyed by ISO date.
-  readonly property var monthAgenda: agenda.filter(function(ev) {
-    var y = parseInt(ev.startDate.slice(0, 4), 10)
-    var m = parseInt(ev.startDate.slice(5, 7), 10) - 1
-    return y === root.viewYear && m === root.viewMonth
-  })
-
-  function openNewEvent() {
-    if (root.bar) root.bar.run("omarchy-launch-or-focus-tui khal new -i")
-  }
-
-  function openInteractive() {
-    if (root.bar) root.bar.run("omarchy-launch-or-focus-tui ikhal")
-  }
-
   function open() {
     refresh()
-    refreshEvents()
     root.controller.show()
     // Set after showing, not before: showing hands the popout coordinator
     // over, which closes whichever panel was open, and that close clears the
@@ -197,7 +127,6 @@ Panel {
   function refresh() {
     root.today = new Date()
     root.goToToday()
-    refreshEvents()
   }
 
   function goToToday() {
@@ -302,30 +231,6 @@ Panel {
       var followToday = root.viewingCurrentMonth
       root.today = clock.date
       if (followToday) root.goToToday()
-    }
-  }
-
-  // Fetches the event index by shelling out to the plugin's helper script,
-  // which reads the khal database (kept in sync with Google Calendar by
-  // vdirsyncer). One Process reused across refreshes; `running` is the guard
-  // so a slow fetch never overlaps itself.
-  Process {
-    id: eventsProc
-    command: ["python3", root.fetchScript]
-    stdout: StdioCollector {
-      id: eventsOut
-      waitForEnd: true
-    }
-    onExited: function(exitCode) {
-      if (exitCode === 0) {
-        root.applyEvents(eventsOut.text)
-      } else if (exitCode === 2) {
-        root.events = ({})
-        root.agenda = []
-        root.eventsError = "Run `khal configure` or set up vdirsyncer to show events."
-      } else {
-        root.eventsError = "Could not read calendar events."
-      }
     }
   }
 
@@ -767,29 +672,6 @@ Panel {
                         font.pixelSize: Style.font.body
                         font.bold: modelData.today
                       }
-
-                      // Event dots, one per event on this day. The day text
-                      // sits in the cell's centre, so dots tuck under it.
-                      readonly property var cellEvents: root.eventsOn(modelData.key)
-
-                      Row {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin: Style.space(4)
-                        spacing: Style.space(3)
-
-                        Repeater {
-                          model: parent.parent.cellEvents
-
-                          Rectangle {
-                            required property var modelData
-                            width: Style.space(5)
-                            height: Style.space(5)
-                            radius: width / 2
-                            color: Style.selectedStateColor(root.contentForeground, Color.accent)
-                          }
-                        }
-                      }
                     }
                   }
                 }
@@ -865,10 +747,9 @@ Panel {
             }
           }
 
-          // ---- Agenda for the viewed month. Events are read from khal (kept
-          //      in sync with Google Calendar by vdirsyncer). A Sync button
-          //      re-reads the local database, and New/Open drop into khal's
-          //      terminal UI to create or edit events.
+          // ---- Agenda placeholder. Events and tasks are wired back in during
+          //      Phase 6, reading ~/.local/state/parm.clock/state.json (gws
+          //      sync). For now the panel is a clean stock-clock clone.
           Item {
             width: parent.width
             height: agendaColumn.implicitHeight
@@ -883,108 +764,22 @@ Panel {
                 foreground: root.contentForeground
               }
 
-              // Section header: title + Sync/New/Open actions on the right.
-              Item {
-                width: parent.width
-                height: Math.max(agendaTitle.implicitHeight, agendaActions.implicitHeight)
-
-                Text {
-                  id: agendaTitle
-                  anchors.left: parent.left
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: "EVENTS"
-                  color: Qt.darker(root.contentForeground, 1.4)
-                  font.family: root.contentFontFamily
-                  font.pixelSize: Style.font.caption
-                  font.letterSpacing: 1
-                  font.bold: true
-                }
-
-                Row {
-                  id: agendaActions
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  spacing: Style.space(6)
-
-                  Button {
-                    iconText: "󰐪"
-                    tooltipText: "Sync (vdirsyncer sync)"
-                    foreground: root.contentForeground
-                    fontFamily: root.contentFontFamily
-                    onClicked: {
-                      if (root.bar) root.bar.run("vdirsyncer sync && omarchy-shell -q parm.clock refresh")
-                    }
-                  }
-
-                  Button {
-                    iconText: "󰒓"
-                    tooltipText: "New event (khal new)"
-                    foreground: root.contentForeground
-                    fontFamily: root.contentFontFamily
-                    onClicked: root.openNewEvent()
-                  }
-
-                  Button {
-                    iconText: "󰖲"
-                    tooltipText: "Calendar (ikhal)"
-                    foreground: root.contentForeground
-                    fontFamily: root.contentFontFamily
-                    onClicked: root.openInteractive()
-                  }
-                }
-              }
-
-              // Setup hint when khal/vdirsyncer is not configured.
               Text {
-                visible: root.eventsError !== ""
                 width: parent.width
-                text: root.eventsError
+                text: "EVENTS"
                 color: Qt.darker(root.contentForeground, 1.4)
                 font.family: root.contentFontFamily
-                font.pixelSize: Style.font.bodySmall
-                wrapMode: Text.WordWrap
+                font.pixelSize: Style.font.caption
+                font.letterSpacing: 1
+                font.bold: true
               }
 
-              // Empty-state hint when there are no events in the month.
               Text {
-                visible: root.eventsError === "" && root.monthAgenda.length === 0
                 width: parent.width
-                text: "No events this month."
+                text: "No events yet."
                 color: Qt.darker(root.contentForeground, 1.8)
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.bodySmall
-              }
-
-              // One row per event in the viewed month. All-day events drop
-              // the time; timed events show HH:MM–HH:MM.
-              Repeater {
-                model: root.monthAgenda
-
-                Row {
-                  required property var modelData
-                  width: parent.width
-                  spacing: Style.space(10)
-
-                  Text {
-                    id: agendaTime
-                    width: Style.space(78)
-                    text: modelData.allday
-                      ? "all day"
-                      : (modelData.startTime || "") + "–" + (modelData.endTime || "")
-                    color: Qt.darker(root.contentForeground, 1.4)
-                    font.family: root.contentFontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    elide: Text.ElideRight
-                  }
-
-                  Text {
-                    text: modelData.title
-                    color: root.contentForeground
-                    font.family: root.contentFontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    elide: Text.ElideRight
-                  }
-                }
               }
             }
           }

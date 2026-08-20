@@ -4,7 +4,7 @@
   "name": "Google Calendar Clock",
   "version": "1.0.0",
   "author": "parm",
-  "description": "Clock with a calendar popup that shows and edits events from your Google Calendar (via khal + vdirsyncer)",
+  "description": "Clock with a calendar popup that shows and edits events and tasks from your Google Calendar (gws-powered)",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Google Calendar Clock",
-    "description": "Clock with a calendar popup that shows and edits events from your Google Calendar (via khal + vdirsyncer)",
+    "description": "Clock with a calendar popup that shows and edits events and tasks from your Google Calendar (gws-powered)",
     "category": "Time",
     "allowMultiple": false
   },
