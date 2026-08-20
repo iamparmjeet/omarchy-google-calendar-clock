@@ -360,3 +360,44 @@ and on `BarWidget.qml` minus the pre-existing `IpcHandler` block (stock
 correctly flagged).
 
 **Next:** Phase 10 — README/setup/uninstall/troubleshooting + final AGENT_LOG.
+
+---
+
+## Phase 10 — Polish + docs (README / setup / uninstall)
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-21
+
+**What changed:**
+
+- `LICENSE` — added (MIT). PLAN §12 required one; it was missing. Notes the
+  stock-clock derivation attribution (BarWidget/Panel/Model.js from
+  `omarchy.clock`).
+- `scripts/setup.sh` — new. Steps per PLAN §7: verify/install `gcloud` + `gws`
+  (pacman on Arch), `gws auth setup --project`, `gws auth login --services
+  calendar,tasks` (the one browser consent), assert `gws auth status`, write
+  `~/.config/parm.clock/config.json` (auto-detects timezone from
+  `/etc/localtime`/`/etc/timezone`, falls back to `Asia/Kolkata`), first sync,
+  install + `enable --now` the systemd timer. Renders the units with this
+  machine's absolute `python3` path (the committed units hardcode the dev
+  machine). Idempotent; `--project`/`--timezone`/`--dry-run` options.
+- `scripts/uninstall.sh` — new. Stops + disables + removes the systemd units,
+  deletes the generated config; optional `--purge-data` (cached state.json),
+  `--purge-plugin` (`omarchy plugin remove`), `--purge-config` (strip the
+  `parm.clock` entry from shell.json via jq). Never touches Google data.
+- `README.md` — rewrote: requirements, install (plugin add + enable center),
+  step-by-step setup (honest about the one manual consent + Testing-mode test
+  user), settings (shell.json keys vs config.json keys), uninstall options,
+  and a Troubleshooting section (auth/empty panel, wrong write target, stale
+  badge, timer-vs-manual, OAuth rejection, keyring).
+
+**Verified:** both scripts pass `bash -n`; `--dry-run` paths resolve the plugin
+root correctly and print the expected systemd/state paths; README commands
+match `omarchy plugin`/`systemctl`/`gws` interfaces checked against `gws
+--help` / `gws auth setup --help` / `omarchy plugin --help`.
+
+**Gate:** 56 Python + 17 JS tests pass; `qmllint` clean on `Panel.qml` (rc 0);
+`omarchy plugin validate` exit 0; live `sync.py` → `state: ok` (16 events,
+1 task).
+
+**Build complete.** All phases 0–10 done.
