@@ -398,10 +398,23 @@ Panel {
       id: mutateOut
       waitForEnd: true
     }
+    // mutate.py reports failures on stderr (gws errors are re-raised there via
+    // _fail, and a failed re-sync also prints there). Capturing stdout alone
+    // left the UI with a blank error on every failed write.
+    stderr: StdioCollector {
+      id: mutateErr
+      waitForEnd: true
+      onStreamFinished: root.mutateOutput = String(text || "").trim()
+    }
     onExited: function(exitCode) {
       if (exitCode !== 0) {
-        root.mutateOutput = mutateOut.text
-        console.warn("parm.clock mutate failed:", mutateOut.text)
+        // The stderr collector's stream-finished has no guaranteed order
+        // relative to onExited; use whatever landed, else a generic message.
+        if (root.mutateOutput === "")
+          root.mutateOutput = String(mutateErr.text || "").trim()
+            || String(mutateOut.text || "").trim()
+            || "mutate exited " + exitCode
+        console.warn("parm.clock mutate failed:", root.mutateOutput)
       } else {
         root.mutateOutput = ""
       }

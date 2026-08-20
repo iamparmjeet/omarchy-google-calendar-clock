@@ -19,7 +19,7 @@ from sync import gws_adapter  # noqa: E402
 
 
 FAKE_GWS = """#!/usr/bin/env python3
-import json, sys
+import json, os, sys
 
 # gws <service> <resource> <method> --params <json> [--json <json>]
 args = sys.argv[1:]
@@ -60,6 +60,13 @@ if method == "list" and resource == "tasklists":
     sys.exit(0)
 
 if method == "list" and resource == "tasks":
+    if os.environ.get("FAKE_GWS_PAGED") == "1":
+        page_token = params.get("pageToken")
+        if not page_token:
+            print(json.dumps({"items": [{"id": "p1"}], "nextPageToken": "tok2"}))
+        else:
+            print(json.dumps({"items": [{"id": "p2"}]}))
+        sys.exit(0)
     print(json.dumps({"items": [{"id": "t1", "title": "todo"}]}))
     sys.exit(0)
 
@@ -111,6 +118,15 @@ class TestGwsAdapter(unittest.TestCase):
     def test_list_tasks(self):
         tasks = gws_adapter.list_tasks("default", gws_path=self._gws())
         self.assertEqual(tasks[0]["id"], "t1")
+
+    def test_list_tasks_pages(self):
+        # A list method returning a nextPageToken must be followed to exhaustion.
+        os.environ["FAKE_GWS_PAGED"] = "1"
+        try:
+            tasks = gws_adapter.list_tasks("default", gws_path=self._gws())
+            self.assertEqual([t["id"] for t in tasks], ["p1", "p2"])
+        finally:
+            os.environ.pop("FAKE_GWS_PAGED", None)
 
     def test_auth_error_classified(self):
         # Use a resource/method that forwards to the failure branch.

@@ -182,10 +182,39 @@ def auth_status(gws_path: Optional[str] = None) -> dict:
         return {}
 
 
+def _list_all(
+    service: str,
+    resource: str,
+    method: str,
+    params: dict,
+    *,
+    gws_path: Optional[str] = None,
+) -> list[dict]:
+    """Page through a gws ``list`` method until ``nextPageToken`` is exhausted.
+
+    All Google list endpoints cap the page size (tasks: 100, events: 2500,
+    calendars/tasklists: a few hundred) and hand back a ``nextPageToken``. A
+    single un-paged call would silently truncate a large account, so every list
+    helper funnels through here.
+    """
+    items: list[dict] = []
+    page_token: Optional[str] = None
+    while True:
+        p = dict(params)
+        if page_token:
+            p["pageToken"] = page_token
+        data = run(service, resource, method, params=p, gws_path=gws_path)
+        if not isinstance(data, dict):
+            return items
+        items.extend(data.get("items", []) or [])
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            return items
+
+
 def list_calendars(gws_path: Optional[str] = None) -> list[dict]:
     """``gws calendar calendarList list`` -> list of CalendarListEntry dicts."""
-    data = run("calendar", "calendarList", "list", params={}, gws_path=gws_path)
-    return data.get("items", []) if isinstance(data, dict) else []
+    return _list_all("calendar", "calendarList", "list", {}, gws_path=gws_path)
 
 
 def list_events(
@@ -206,14 +235,12 @@ def list_events(
         "orderBy": order_by,
         "maxResults": 2500,
     }
-    data = run("calendar", "events", "list", params=params, gws_path=gws_path)
-    return data.get("items", []) if isinstance(data, dict) else []
+    return _list_all("calendar", "events", "list", params, gws_path=gws_path)
 
 
 def list_tasklists(gws_path: Optional[str] = None) -> list[dict]:
     """``gws tasks tasklists list`` -> list of TaskList dicts."""
-    data = run("tasks", "tasklists", "list", params={}, gws_path=gws_path)
-    return data.get("items", []) if isinstance(data, dict) else []
+    return _list_all("tasks", "tasklists", "list", {"maxResults": 100}, gws_path=gws_path)
 
 
 def list_tasks(
@@ -225,13 +252,16 @@ def list_tasks(
     gws_path: Optional[str] = None,
 ) -> list[dict]:
     """``gws tasks tasks list`` for one task list."""
-    params: dict[str, Any] = {"tasklist": tasklist_id, "showCompleted": show_completed}
+    params: dict[str, Any] = {
+        "tasklist": tasklist_id,
+        "showCompleted": show_completed,
+        "maxResults": 100,
+    }
     if due_min:
         params["dueMin"] = due_min
     if due_max:
         params["dueMax"] = due_max
-    data = run("tasks", "tasks", "list", params=params, gws_path=gws_path)
-    return data.get("items", []) if isinstance(data, dict) else []
+    return _list_all("tasks", "tasks", "list", params, gws_path=gws_path)
 
 
 # Write operations (used by the CRUD wiring in a later phase).

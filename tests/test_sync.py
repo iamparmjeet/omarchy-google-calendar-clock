@@ -49,6 +49,9 @@ if resource == "calendarList" and method == "list":
 
 # --- calendar.events list ---
 if resource == "events" and method == "list":
+    if os.environ.get("FAKE_GWS_EVENT_AUTH"):
+        print(json.dumps({"error": {"code": 401, "message": "Token expired", "reason": "authError"}}))
+        sys.exit(2)
     print(json.dumps({"items": [
         {"id": "e1", "summary": "Timed", "status": "confirmed",
          "start": {"dateTime": "2026-08-20T09:00:00+05:30", "timeZone": "Asia/Kolkata"},
@@ -207,6 +210,24 @@ class TestSyncPipeline(unittest.TestCase):
         state = json.loads(self.state_path.read_text())
         self.assertEqual(validate_state(state), [])
         self.assertEqual(state["syncStatus"]["state"], "ok")
+
+    def test_event_auth_error_preserves_last_good(self):
+        # A token expiry during per-calendar fetch (check_auth=False path) must
+        # NOT swallow the AuthError into an empty "ok" state — it must preserve
+        # the last-good document.
+        os.environ["FAKE_GWS_AUTH"] = "ok"
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        sync.run_sync(self._cfg(), gws_path=str(self.fake), state_path=self.state_path)
+        good = self.state_path.read_text()
+
+        os.environ["FAKE_GWS_EVENT_AUTH"] = "1"
+        try:
+            code = sync.run_sync(self._cfg(), gws_path=str(self.fake), state_path=self.state_path,
+                                 check_auth=False)
+            self.assertEqual(code, 2)
+            self.assertEqual(self.state_path.read_text(), good)
+        finally:
+            os.environ.pop("FAKE_GWS_EVENT_AUTH", None)
 
     def test_malformed_prior_state_replaced(self):
         # A corrupt state.json must not be treated as "last good"; the next

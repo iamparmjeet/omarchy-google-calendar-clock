@@ -26,9 +26,13 @@ import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from itertools import count
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
+
+# Unique-per-process counter for atomic_write temp names (see atomic_write).
+_TMP_COUNTER = count()
 
 # Allow running both as ``python3 sync/sync.py`` (systemd) and as a package
 # module (``python3 -m sync.sync`` or tests importing ``sync.sync``).
@@ -110,14 +114,23 @@ def sort_tasks(tasks: list[dict]) -> list[dict]:
 
 
 def atomic_write(path: Path, data: str) -> None:
-    """Write ``data`` to ``path`` atomically (tmp -> fsync -> rename)."""
+    """Write ``data`` to ``path`` atomically (tmp -> fsync -> rename).
+
+    The temp file is unique per writer (pid + counter) so that two concurrent
+    syncs — e.g. the systemd timer firing while a post-write refresh is still
+    writing — never share a tmp path and interleave into a corrupt rename.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(data)
-        f.flush()
-        os.fsync(f.fileno())
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{next(_TMP_COUNTER)}")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def load_last_good(target: Optional[Path] = None) -> Optional[dict]:
@@ -247,8 +260,15 @@ def run_sync(
                     if raw.get("status") == "cancelled":
                         continue
                     out.append(normalize_event(raw, cal_id, timezone))
+            except (gws_adapter.AuthError, gws_adapter.ApiError):
+                # Auth/API failures must NOT be swallowed: swallowing them here
+                # would let an expired token (check_auth=False refresh) write an
+                # empty "ok" state over the last-good state. Re-raise so the
+                # outer handler preserves last-good.
+                raise
             except gws_adapter.GwsError:
-                # One calendar failing shouldn't abort the whole sync.
+                # One calendar failing transiently (timeout, discovery) should
+                # not abort the whole sync; that calendar is skipped.
                 pass
             return out
 
@@ -259,6 +279,8 @@ def run_sync(
                     if raw.get("status") == "completed":
                         continue
                     out.append(normalize_task(raw, tl_id))
+            except (gws_adapter.AuthError, gws_adapter.ApiError):
+                raise
             except gws_adapter.GwsError:
                 pass
             return out
@@ -297,6 +319,11 @@ def run_sync(
         _preserve_or_emit_failure(target, cfg, "auth", str(e))
         return 2
     except gws_adapter.ApiError as e:
+        _preserve_or_emit_failure(target, cfg, "error", str(e))
+        return 3
+    except gws_adapter.GwsError as e:
+        # Validation/discovery/timeout/internal gws failures. Not auth and not
+        # a Google API rejection, but still not success — preserve last-good.
         _preserve_or_emit_failure(target, cfg, "error", str(e))
         return 3
     except gws_adapter.GwsNotFound as e:

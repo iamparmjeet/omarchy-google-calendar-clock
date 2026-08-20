@@ -296,3 +296,67 @@ re-fetching all events sequentially.
 
 **Next:** Phase 9 — adversarial review (race conditions, security, timezone,
 systemd, Omarchy compat) + fixes.
+
+---
+
+## Phase 9 — Adversarial review + fixes
+
+**Agent:** deepseek/deepseek-v4-pro (second-opinion review)
+**Date:** 2026-08-21
+
+**Review:** read AGENTS.md, PLAN, TASKS, PROMPTS, ARCHITECTURE, DECISIONS, and
+every source file (sync/*.py, Model.js, BarWidget.qml, Panel.qml, systemd
+units, manifest, tests/fixtures); verified gws invocation shapes against
+`gws schema calendar.events.list / tasks.tasks.list / tasks.tasklists.list`;
+re-ran the full suite + live sync. Found and fixed five issues, one at a time.
+
+**Fix 1 — auth/API errors silently swallowed during per-calendar fetch
+(data-loss bug).** In `sync/sync.py`, `_fetch_events`/`_fetch_tasks` caught
+`GwsError` (the base of `AuthError`/`ApiError`) and `pass`ed. When
+`check_auth=False` (the post-write refresh path) and the token had expired,
+every fetch raised `AuthError`, which was swallowed — so the sync wrote an
+**empty `ok` state over the last-good state**. Now `AuthError`/`ApiError` are
+re-raised so the outer handler preserves last-good and returns exit 2; only
+transient `GwsError` (timeout/discovery) is skipped. Added
+`test_event_auth_error_preserves_last_good`.
+
+**Fix 2 — list pagination missing.** `gws_adapter.list_tasks` omitted
+`maxResults`, so Google's default of 20 silently truncated any task list over
+20 items (verified: `gws schema tasks.tasks.list` maxResults default 20/max
+100). Added a shared `_list_all` pager that follows `nextPageToken` to
+exhaustion and wired it into `list_calendars`, `list_events`, `list_tasklists`,
+`list_tasks` (with `maxResults=100` on the tasks endpoints). Added
+`test_list_tasks_pages`.
+
+**Fix 3 — atomic-write tmp-name race.** `atomic_write` used a fixed
+`state.json.tmp` path; two concurrent syncs (timer firing while a post-write
+refresh is mid-write) could interleave write/fsync/rename on the same tmp file.
+Temp name is now unique per writer (`state.json.tmp.<pid>.<n>`), replaced with
+`finally` cleanup. No API change.
+
+**Fix 4 — mutate.py errors lost in the UI.** `mutate.py` reports failures on
+stderr, but `Panel.qml`'s `Process` only attached a `StdioCollector` to
+`stdout`, so a failed create/delete showed a blank error box. Added a `stderr`
+collector and an `onExited` fallback that surfaces the stderr/stdout text (or a
+generic message) instead of nothing.
+
+**Fix 5 — uncaught `GwsError` traceback.** `run_sync` caught `AuthError`,
+`ApiError`, `GwsNotFound`, and `OSError`, but not the base `GwsError`
+(validation/discovery/timeout/internal). A gws timeout or discovery failure
+escaped as an unhandled Python traceback (exit 1, ugly journal output). Added a
+`GwsError` catch that preserves last-good and returns exit 3.
+
+**Non-issues reviewed and left as-is:** the `.gitignore`-tracked
+`download.html`; the panel's `todayKey`/`dayEvents`/`dayTasks` property
+regeneration on state reload (the watcher is `atomicWrites: true`); the
+cross-midnight timed-event model (Google serves expanded instances with
+`singleEvents=true`); `config.py`'s unused `save_config`/`CONFIG_PATH` (settings
+live in shell.json per PLAN §9; sync-only keys are read from defaults).
+
+**Gate:** 56 Python + 17 JS tests pass; `qmllint` clean on `Panel.qml` (rc 0)
+and on `BarWidget.qml` minus the pre-existing `IpcHandler` block (stock
+`omarchy.clock` returns the same rc 255); `omarchy plugin validate` exit 0; live
+`sync.py` returns `state: ok` (4 calendars, 16 events, 1 task, primary calendar
+correctly flagged).
+
+**Next:** Phase 10 — README/setup/uninstall/troubleshooting + final AGENT_LOG.
