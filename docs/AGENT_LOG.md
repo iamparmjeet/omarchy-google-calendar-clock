@@ -174,3 +174,43 @@ same qmllint rc 255 for that block — a known qmllint/Quickshell limitation, no
 a regression); `omarchy plugin validate` exit 0; 17 JS + 42 Python tests pass.
 
 **Next:** Phase 7 — CRUD wiring (create/edit/delete event & task via gws).
+
+---
+
+## Phase 7 — CRUD wiring (via gws → re-sync)
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-20
+
+**What changed:**
+- `sync/mutate.py` — the QML→gws bridge. QML never calls gws/Google directly;
+  it shells out here. Commands: `event-quickadd`, `event-add` (timed / all-day /
+  `--meet`), `event-delete`, `task-add`, `task-complete` (`--undo`), `task-delete`.
+  Each write re-syncs `state.json` afterwards. Exit 0/2/3/4/5.
+- `sync/gws_adapter.py` — fixed the delete path: gws returns an empty body on
+  success (with keyring noise on stderr); a successful empty/non-JSON body now
+  resolves to `{}` instead of raising a parse error.
+- `Panel.qml` — quick-add event input, new-task input (title + due), per-row
+  delete buttons (events) and complete/delete buttons (tasks). Writes call
+  `sync/mutate.py` via `bar.run`, then refresh the panel.
+- `tests/test_mutate.py` — 7 tests against a fake gws (write shapes, all-day
+  exclusive end, task due/complete/delete, re-sync-after-write).
+
+**Live round-trip (gate):** PASSED against real Google —
+  - `event-quickadd` "CRUD test meeting tomorrow 10am" → appeared in state.json
+    (dateKey 2026-08-22) → `event-delete` → confirmed gone server-side.
+  - `task-add` "CRUD test task" due 2026-08-21 → `task-complete` → `task-delete`
+    → confirmed gone server-side.
+  - `python3 sync/sync.py` now reports `syncStatus.state: ok` with real data
+    (4 calendars, 15 events, tasklist "My Tasks").
+
+**Setup note:** the `omarchy-clock` GCP project had been deleted
+(`DELETE_REQUESTED`); restored via `gcloud projects undelete omarchy-clock`.
+`gws auth login --services calendar,tasks` completed (one browser consent), and
+the account was added as an OAuth "Test user" in the console (Testing-mode app).
+
+**Gate:** 49 Python + 17 JS tests pass; `qmllint` clean on Panel.qml;
+`omarchy plugin validate` exit 0; live create/read/delete round-trip verified.
+
+**Next:** Phase 8 — Integration (auth-expired, offline, malformed, DST,
+recurrence, manual sync, shell lifecycle).

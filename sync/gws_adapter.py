@@ -120,7 +120,9 @@ def run(
     stdout = proc.stdout.strip()
     stderr = proc.stderr.strip()
 
-    # Try stdout first (gws emits the JSON error body there too).
+    # gws writes JSON to stdout; stderr carries human/log lines (e.g. "Using
+    # keyring backend: keyring") plus a duplicated error line on failure. Parse
+    # stdout first, falling back to stderr only when stdout is empty.
     payload = stdout or stderr
 
     if proc.returncode == EXIT_AUTH:
@@ -133,6 +135,10 @@ def run(
         try:
             return json.loads(payload)
         except ValueError:
+            # A successful call with a non-JSON body (e.g. a delete that returns
+            # nothing) is fine — return an empty dict rather than erroring.
+            if not _looks_like_json(stdout):
+                return {}
             raise GwsError("gws returned non-JSON output", "parse")
 
     # Non-zero, non-auth exit.
@@ -145,6 +151,10 @@ def run(
     if proc.returncode == EXIT_API:
         raise ApiError(message, err.get("code"))
     raise GwsError(message, "gws", proc.returncode)
+
+
+def _looks_like_json(text: str) -> bool:
+    return text.startswith("{") or text.startswith("[")
 
 
 # ---------------------------------------------------------------------------

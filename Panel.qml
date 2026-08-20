@@ -266,6 +266,93 @@ Panel {
     return u.startsWith("file://") ? u.slice(7) : u
   }
 
+  // ---- CRUD (Phase 7). Writes go through sync/mutate.py, which calls gws
+  //      then re-syncs state.json. QML never talks to gws or Google directly.
+  readonly property string mutatePath: {
+    var u = Qt.resolvedUrl("sync/mutate.py").toString()
+    return u.startsWith("file://") ? u.slice(7) : u
+  }
+
+  property string primaryCalendarId: root.state.calendars.length > 0 ? root.state.calendars[0].id : "primary"
+  property string primaryTasklistId: root.state.tasklists.length > 0 ? root.state.tasklists[0].id : "@default"
+
+  property string mutateOutput: ""
+
+  property bool editingNewEvent: false
+  property bool editingNewTask: false
+
+  function toggleNewEvent() {
+    root.editingNewEvent = !root.editingNewEvent
+    if (root.editingNewEvent) root.editingNewTask = false
+    if (root.editingNewEvent) Qt.callLater(function() { if (quickAddField) quickAddField.forceActiveFocus() })
+  }
+
+  function toggleNewTask() {
+    root.editingNewTask = !root.editingNewTask
+    if (root.editingNewTask) root.editingNewEvent = false
+    if (root.editingNewTask) Qt.callLater(function() { if (taskTitleField) taskTitleField.forceActiveFocus() })
+  }
+
+  function commitQuickAdd() {
+    root.newEventQuick(String(quickAddField.text).trim())
+    root.editingNewEvent = false
+    quickAddField.text = ""
+  }
+
+  function commitNewTask() {
+    root.newTask(String(taskTitleField.text).trim(), String(taskDueField.text).trim())
+    root.editingNewTask = false
+    taskTitleField.text = ""
+    taskDueField.text = ""
+  }
+
+  function runMutate(args) {
+    if (mutateProc.running) return
+    mutateOutput = ""
+    var cmd = ["python3", root.mutatePath].concat(args)
+    mutateProc.command = cmd
+    mutateProc.running = true
+  }
+
+  function refreshAfterMutate() {
+    if (root.bar) root.bar.run("omarchy-shell -q parm.clock refresh")
+  }
+
+  function newEventQuick(text) {
+    if (!text) return
+    runMutate(["event-quickadd", "--calendar", root.primaryCalendarId, "--text", text])
+  }
+
+  function newEventForm(title, date, start, end, location, meet) {
+    var args = ["event-add", "--calendar", root.primaryCalendarId, "--title", title, "--date", date]
+    if (start) args = args.concat(["--start", start])
+    if (end) args = args.concat(["--end", end])
+    if (location) args = args.concat(["--location", location])
+    if (meet) args.push("--meet")
+    runMutate(args)
+  }
+
+  function deleteEvent(ev) {
+    if (!ev || !ev.id) return
+    runMutate(["event-delete", "--calendar", ev.calendarId || root.primaryCalendarId, "--event", ev.id])
+  }
+
+  function newTask(title, due) {
+    var args = ["task-add", "--list", root.primaryTasklistId, "--title", title]
+    if (due) args = args.concat(["--due", due])
+    runMutate(args)
+  }
+
+  function completeTask(task) {
+    if (!task || !task.id) return
+    runMutate(["task-complete", "--list", task.listId || root.primaryTasklistId, "--task", task.id])
+  }
+
+  function deleteTask(task) {
+    if (!task || !task.id) return
+    runMutate(["task-delete", "--list", task.listId || root.primaryTasklistId, "--task", task.id])
+  }
+
   SystemClock {
     id: clock
     precision: SystemClock.Minutes
@@ -287,6 +374,27 @@ Panel {
     onLoaded: root.state = Model.parseState(text())
     onLoadFailed: root.state = Model.parseState("")
     onFileChanged: reload()
+  }
+
+  // Runs sync/mutate.py for CRUD writes.
+  Process {
+    id: mutateProc
+    command: []
+    stdout: StdioCollector {
+      id: mutateOut
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.mutateOutput = mutateOut.text
+        console.warn("parm.clock mutate failed:", mutateOut.text)
+      } else {
+        root.mutateOutput = ""
+      }
+      // Always refresh: a successful write re-syncs; a failed one leaves
+      // state.json untouched (preserve-last-good).
+      root.refreshAfterMutate()
+    }
   }
 
   KeyboardPanel {
@@ -866,18 +974,20 @@ Panel {
 
             Button {
               iconText: "󰐕"
-              tooltipText: "New event (Phase 7)"
+              tooltipText: "New event"
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
-              onClicked: {}
+              selected: root.editingNewEvent
+              onClicked: root.toggleNewEvent()
             }
 
             Button {
               iconText: "󰊱"
-              tooltipText: "New task (Phase 7)"
+              tooltipText: "New task"
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
-              onClicked: {}
+              selected: root.editingNewTask
+              onClicked: root.toggleNewTask()
             }
 
             Button {
@@ -895,6 +1005,96 @@ Panel {
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
               onClicked: root.toggleExpand()
+            }
+          }
+
+          // ---- New event (quick add).
+          Column {
+            visible: root.editingNewEvent
+            width: parent.width
+            spacing: Style.space(6)
+
+            PanelSeparator { width: parent.width; foreground: root.contentForeground }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(8)
+
+              TextField {
+                id: quickAddField
+                width: parent.width - quickAddButton.implicitWidth - Style.space(8)
+                placeholderText: "New event — e.g. Lunch tomorrow 1pm"
+                foreground: root.contentForeground
+                font.family: root.contentFontFamily
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) root.commitQuickAdd()
+                  else if (event.key === Qt.Key_Escape) root.editingNewEvent = false
+                }
+              }
+
+              Button {
+                id: quickAddButton
+                text: "Add"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                onClicked: root.commitQuickAdd()
+              }
+            }
+
+            Text {
+              visible: root.mutateOutput !== ""
+              width: parent.width
+              text: root.mutateOutput
+              color: Color.urgent
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+          }
+
+          // ---- New task.
+          Column {
+            visible: root.editingNewTask
+            width: parent.width
+            spacing: Style.space(6)
+
+            PanelSeparator { width: parent.width; foreground: root.contentForeground }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(8)
+
+              TextField {
+                id: taskTitleField
+                width: parent.width - taskDueField.width - taskAddButton.implicitWidth - Style.space(16)
+                placeholderText: "New task"
+                foreground: root.contentForeground
+                font.family: root.contentFontFamily
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) root.commitNewTask()
+                  else if (event.key === Qt.Key_Escape) root.editingNewTask = false
+                }
+              }
+
+              TextField {
+                id: taskDueField
+                width: Style.space(120)
+                placeholderText: "due (YYYY-MM-DD)"
+                foreground: root.contentForeground
+                font.family: root.contentFontFamily
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) root.commitNewTask()
+                  else if (event.key === Qt.Key_Escape) root.editingNewTask = false
+                }
+              }
+
+              Button {
+                id: taskAddButton
+                text: "Add"
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                onClicked: root.commitNewTask()
+              }
             }
           }
 
@@ -1015,6 +1215,18 @@ Panel {
           font.pixelSize: Style.font.bodySmall
           elide: Text.ElideRight
         }
+
+        Item { width: Math.max(0, parent.width - (66 + 6 + 8*4) - 24); height: 1 }
+
+        PanelActionButton {
+          anchors.verticalCenter: parent.verticalCenter
+          iconText: "󰆴"
+          tooltipText: "Delete event"
+          hoverColor: Color.urgent
+          foreground: foreground
+          fontFamily: fontFamily
+          onClicked: root.deleteEvent(modelData)
+        }
       }
     }
 
@@ -1042,12 +1254,13 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
 
-        Text {
+        PanelActionButton {
           anchors.verticalCenter: parent.verticalCenter
-          text: modelData.status === "completed" ? "󰄱" : "󰘳"
-          color: Qt.darker(foreground, 1.4)
-          font.family: fontFamily
-          font.pixelSize: Style.font.bodySmall
+          iconText: modelData.status === "completed" ? "󰄲" : "󰘳"
+          tooltipText: modelData.status === "completed" ? "Mark incomplete" : "Complete task"
+          foreground: foreground
+          fontFamily: fontFamily
+          onClicked: root.completeTask(modelData)
         }
 
         Text {
@@ -1057,6 +1270,18 @@ Panel {
           font.family: fontFamily
           font.pixelSize: Style.font.bodySmall
           elide: Text.ElideRight
+        }
+
+        Item { width: Math.max(0, parent.width - (24 + 8*4) - 24); height: 1 }
+
+        PanelActionButton {
+          anchors.verticalCenter: parent.verticalCenter
+          iconText: "󰆴"
+          tooltipText: "Delete task"
+          hoverColor: Color.urgent
+          foreground: foreground
+          fontFamily: fontFamily
+          onClicked: root.deleteTask(modelData)
         }
       }
     }
