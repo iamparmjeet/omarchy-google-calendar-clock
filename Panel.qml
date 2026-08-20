@@ -996,7 +996,7 @@ Panel {
             }
 
             Button {
-              iconText: "󰊱"
+              iconText: "󰄳"
               tooltipText: "New task"
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
@@ -1123,7 +1123,7 @@ Panel {
             Toggle {
               width: parent.width
               label: "Task badge"
-              description: "Show the ☑ N task count on the clock"
+              description: "Show the 󰄳 N task count on the clock"
               checked: root.showTaskBadge
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
@@ -1270,7 +1270,7 @@ Panel {
 
         PanelActionButton {
           anchors.verticalCenter: parent.verticalCenter
-          iconText: modelData.status === "completed" ? "󰄲" : "󰘳"
+          iconText: modelData.status === "completed" ? "󰄳" : "󰄰"
           tooltipText: modelData.status === "completed" ? "Mark incomplete" : "Complete task"
           foreground: foreground
           fontFamily: fontFamily

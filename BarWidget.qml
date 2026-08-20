@@ -24,7 +24,7 @@ BarWidget {
   readonly property bool showBadge: setting("showTaskBadge", true)
   readonly property string badgeMode: setting("badgeCount", "dueToday")
   readonly property int badgeCount: Model.badgeCount(state.tasks, badgeMode, Model.keyForDate(displayDate))
-  readonly property string badgeSuffix: (!vertical && showBadge && badgeCount > 0) ? "  ☑ " + badgeCount : ""
+  readonly property string badgeSuffix: (!vertical && showBadge && badgeCount > 0) ? "  󰄳 " + badgeCount : ""
 
   readonly property string configuredFormat: vertical
     ? setting("verticalFormat", "HH\n—\nmm")
