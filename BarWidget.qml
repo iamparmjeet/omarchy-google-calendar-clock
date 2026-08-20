@@ -16,6 +16,16 @@ BarWidget {
 
   property date displayDate: clock.date
 
+  // ---- Synced state (read-only). The widget reads the normalized
+  //      state.json produced by sync/sync.py to drive the task badge; it never
+  //      touches gws or Google.
+  property string statePath: Quickshell.env("HOME") + "/.local/state/parm.clock/state.json"
+  property var state: Model.parseState("")
+  readonly property bool showBadge: setting("showTaskBadge", true)
+  readonly property string badgeMode: setting("badgeCount", "dueToday")
+  readonly property int badgeCount: Model.badgeCount(state.tasks, badgeMode, Model.keyForDate(displayDate))
+  readonly property string badgeSuffix: (!vertical && showBadge && badgeCount > 0) ? "  ☑ " + badgeCount : ""
+
   readonly property string configuredFormat: vertical
     ? setting("verticalFormat", "HH\n—\nmm")
     : setting("format", "dddd HH:mm")
@@ -32,7 +42,7 @@ BarWidget {
   // A seconds label needs the clock to tick sixty times as often, and a
   // repaint a second is a price only the formats that print seconds pay.
   readonly property bool showsSeconds: Model.clockNeedsSeconds(activeFormat)
-  readonly property string displayText: formatted(displayDate)
+  readonly property string displayText: formatted(displayDate) + badgeSuffix
   readonly property var verticalLines: displayText.split("\n")
 
   function refresh() {
@@ -117,6 +127,19 @@ BarWidget {
     id: clock
     precision: root.showsSeconds ? SystemClock.Seconds : SystemClock.Minutes
     onDateChanged: root.displayDate = date
+  }
+
+  // Watches the synced state file so the badge updates after every sync
+  // without a shell restart.
+  FileView {
+    id: stateFile
+    path: root.statePath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.state = Model.parseState(text())
+    onLoadFailed: root.state = Model.parseState("")
+    onFileChanged: reload()
   }
 
   Loader {

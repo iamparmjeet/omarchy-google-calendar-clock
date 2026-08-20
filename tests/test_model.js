@@ -116,6 +116,39 @@ function testIsStale() {
   assert.strictEqual(Model.isStale({ state: "auth", lastOk: null }, now, 10), true);
 }
 
+// ---- parseState / calendarColor / syncStatusLabel -------------------------
+
+function testParseState() {
+  const s = Model.parseState(JSON.stringify(state));
+  assert.strictEqual(s.timezone, "Asia/Kolkata");
+  assert.strictEqual(s.events.length, 2);
+  assert.strictEqual(s.tasks.length, 1);
+}
+
+function testParseStateGarbage() {
+  const s = Model.parseState("not json {{");
+  assert.strictEqual(s.events.length, 0);
+  assert.strictEqual(s.syncStatus.state, "never");
+}
+
+function testParseStateEmpty() {
+  const s = Model.parseState("");
+  assert.deepStrictEqual(s.events, []);
+}
+
+function testCalendarColor() {
+  const cals = [{ id: "primary", color: "#4285F4" }];
+  assert.strictEqual(Model.calendarColor(cals, "primary"), "#4285F4");
+  assert.strictEqual(Model.calendarColor(cals, "missing"), "");
+}
+
+function testSyncStatusLabel() {
+  const now = "2026-08-20T18:05:00Z";
+  assert.strictEqual(Model.syncStatusLabel({ state: "ok", lastOk: "2026-08-20T18:00:00Z" }, now), "Synced 5m ago");
+  assert.strictEqual(Model.syncStatusLabel({ state: "never", lastOk: null }, now), "Never synced");
+  assert.strictEqual(Model.syncStatusLabel({ state: "auth", lastOk: null }, now), "Auth needed — run setup");
+}
+
 // --------------------------------------------------------------------------
 
 const tests = [
@@ -131,6 +164,11 @@ const tests = [
   testNextEventSkipsPast,
   testCountdown,
   testIsStale,
+  testParseState,
+  testParseStateGarbage,
+  testParseStateEmpty,
+  testCalendarColor,
+  testSyncStatusLabel,
 ];
 
 let failed = 0;

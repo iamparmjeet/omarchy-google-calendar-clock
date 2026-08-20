@@ -140,3 +140,37 @@ setup.sh completes the one browser consent (Phase 10).
 discover -s tests` → 42/42 pass; `qmllint` clean on both QML files.
 
 **Next:** Phase 6 — QML (BarWidget badge + Panel compact/expanded + settings).
+
+---
+
+## Phase 6 — QML (badge + compact/expanded panel + settings)
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-20
+
+**What changed:**
+- `Model.js` — added `parseState` (safe JSON->state, never throws),
+  `calendarColor`, `syncStatusLabel` (human "Synced Nm ago").
+- `BarWidget.qml` — reads `~/.local/state/parm.clock/state.json` via a
+  `FileView` watcher; appends a `☑ N` badge (N = tasks due today) to the label
+  when `showTaskBadge` is on and N > 0; badge count mode from `badgeCount`
+  setting (dueToday|overdue|all).
+- `Panel.qml` — full rebuild:
+  - month grid with event/task dots (calendar-colored, capped at 4) and
+    click-to-select day;
+  - compact (hero + year/life rails + month grid + today agenda strip) and
+    expanded (two-pane: grid | selected-day agenda + tasks) views via a toggle;
+  - header buttons: Sync (runs sync.py), New event / New task (Phase 7 stubs),
+    Settings, Expand/Compact;
+  - settings view (Toggle + Dropdown + calendar-visibility toggles) persisting
+    to shell.json (`showTaskBadge`, `badgeCount`, `defaultView`,
+    `hiddenCalendars`);
+  - sync status footer (`✓ Synced Nm ago` / `⚠ …`) from `syncStatus`.
+- `tests/test_model.js` — +5 tests (parseState, calendarColor, syncStatusLabel).
+
+**Gate:** `qmllint` clean on `Panel.qml` (rc 0) and on `BarWidget.qml` minus the
+pre-existing `IpcHandler` block (the stock `omarchy.clock` BarWidget returns the
+same qmllint rc 255 for that block — a known qmllint/Quickshell limitation, not
+a regression); `omarchy plugin validate` exit 0; 17 JS + 42 Python tests pass.
+
+**Next:** Phase 7 — CRUD wiring (create/edit/delete event & task via gws).

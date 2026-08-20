@@ -442,6 +442,51 @@ function isStale(syncStatus, now, thresholdMin) {
   return (ref - t) / 60000 > thresholdMin
 }
 
+// Parse the raw text of state.json into a safe state object. Never throws;
+// missing/garbage input yields empty arrays and a "never" sync status.
+function parseState(text) {
+  var s = null
+  try { s = JSON.parse(String(text || "")) } catch (e) { s = null }
+  if (!s || typeof s !== "object") s = {}
+  var ss = s.syncStatus
+  return {
+    timezone: s.timezone || "",
+    calendars: Array.isArray(s.calendars) ? s.calendars : [],
+    events: Array.isArray(s.events) ? s.events : [],
+    tasklists: Array.isArray(s.tasklists) ? s.tasklists : [],
+    tasks: Array.isArray(s.tasks) ? s.tasks : [],
+    syncStatus: (ss && typeof ss === "object")
+      ? ss
+      : { state: "never", message: "", lastOk: null }
+  }
+}
+
+// Calendar color hex for a calendarId, or "" when unknown.
+function calendarColor(calendars, calendarId) {
+  var list = calendars || []
+  for (var i = 0; i < list.length; i++)
+    if (list[i].id === calendarId) return list[i].color || ""
+  return ""
+}
+
+// A short, human "synced Nm ago" / "auth needed" / "never synced" label.
+function syncStatusLabel(syncStatus, now) {
+  if (!syncStatus || syncStatus.state === "never") return "Never synced"
+  if (syncStatus.state === "auth") return "Auth needed — run setup"
+  if (syncStatus.state === "error") return syncStatus.message || "Sync error"
+  var last = syncStatus.lastOk
+  if (!last) return "Synced"
+  var ref = typeof now === "string" ? Date.parse(now) : now.getTime()
+  var t = Date.parse(last)
+  if (isNaN(ref) || isNaN(t)) return "Synced"
+  var mins = Math.max(0, Math.round((ref - t) / 60000))
+  if (mins < 1) return "Synced just now"
+  if (mins < 60) return "Synced " + mins + "m ago"
+  var hours = Math.round(mins / 60)
+  if (hours < 24) return "Synced " + hours + "h ago"
+  return "Synced " + Math.round(hours / 24) + "d ago"
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     dateKey: dateKey,
@@ -477,6 +522,9 @@ if (typeof module !== "undefined") {
     badgeCount: badgeCount,
     nextEvent: nextEvent,
     countdown: countdown,
-    isStale: isStale
+    isStale: isStale,
+    parseState: parseState,
+    calendarColor: calendarColor,
+    syncStatusLabel: syncStatusLabel
   }
 }
