@@ -96,7 +96,8 @@ class TestTaskNormalization(unittest.TestCase):
         t = schema.normalize_task(fx["task_needs_action_due_today"], "default")
         self.assertEqual(t["status"], "needsAction")
         self.assertEqual(t["title"], "Reply to email")
-        self.assertIn("2026-08-20", t["due"])
+        # due is normalized to a local date, dropping the meaningless time part.
+        self.assertEqual(t["due"], "2026-08-20")
 
     def test_task_no_due(self):
         fx = load_fixture("tasks.json")

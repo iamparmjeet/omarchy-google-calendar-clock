@@ -309,6 +309,139 @@ function stepMonth(year, month, delta) {
   return { year: target.getFullYear(), month: target.getMonth() }
 }
 
+// ---- Calendar state model (provider-independent). These functions read the
+//      normalized v1 state document produced by sync/sync.py (see
+//      docs/ARCHITECTURE.md) and answer the questions the QML asks. They never
+//      touch gws, Google, or the filesystem — pure functions only, so they are
+//      unit-testable under node.
+
+// Index the state's events into { dateKey: [event, ...] }, expanding all-day
+// and multi-day events across every day they span. dateKey is already local.
+function eventIndex(events) {
+  var index = {}
+  var list = events || []
+  for (var i = 0; i < list.length; i++) {
+    var ev = list[i]
+    var days = dayRange(ev.dateKey, ev.allDay ? ev.end : ev.dateKey)
+    for (var d = 0; d < days.length; d++) {
+      var key = days[d]
+      if (!index[key]) index[key] = []
+      index[key].push(ev)
+    }
+  }
+  return index
+}
+
+// Events on a given day, sorted by start time (all-day first).
+function eventsForDate(index, dateKey) {
+  var list = (index && index[dateKey]) || []
+  return list.slice().sort(compareEvents)
+}
+
+function compareEvents(a, b) {
+  var da = (a.dateKey || "").localeCompare(b.dateKey || "")
+  if (da !== 0) return da
+  if (a.allDay && !b.allDay) return -1
+  if (!a.allDay && b.allDay) return 1
+  return (a.start || "").localeCompare(b.start || "")
+}
+
+// Task's due date (already normalized to YYYY-MM-DD by the sync engine), or
+// "" when the task has no due date.
+function taskDueDate(task) {
+  var due = (task && task.due) || ""
+  if (typeof due !== "string") return ""
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(due)
+  return m ? due.slice(0, 10) : ""
+}
+
+// Incomplete tasks due on a given day.
+function tasksForDate(tasks, dateKey) {
+  var out = []
+  var list = tasks || []
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i]
+    if (t.status === "completed") continue
+    if (taskDueDate(t) === dateKey) out.push(t)
+  }
+  return out
+}
+
+// Count of incomplete tasks matching `mode`, relative to todayKey.
+//   "dueToday" — due exactly today (default)
+//   "overdue"  — due today or earlier
+//   "all"      — every incomplete task, regardless of due date
+function badgeCount(tasks, mode, todayKey) {
+  var m = mode || "dueToday"
+  var count = 0
+  var list = tasks || []
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i]
+    if (t.status === "completed") continue
+    var due = taskDueDate(t)
+    if (m === "all") {
+      count++
+    } else if (m === "overdue") {
+      if (due !== "" && due <= todayKey) count++
+    } else { // dueToday
+      if (due === todayKey) count++
+    }
+  }
+  return count
+}
+
+// The next event whose start is at or after `now`, or null. `now` may be an
+// ISO string or a Date. All-day events are considered to start at 00:00.
+function nextEvent(events, now) {
+  var ref = typeof now === "string" ? Date.parse(now) : now.getTime()
+  if (isNaN(ref)) return null
+  var list = events || []
+  var best = null
+  for (var i = 0; i < list.length; i++) {
+    var ev = list[i]
+    var t = eventStartTime(ev)
+    if (isNaN(t)) continue
+    if (t < ref) continue
+    if (best === null || t < eventStartTime(best)) best = ev
+  }
+  return best
+}
+
+function eventStartTime(ev) {
+  if (!ev) return NaN
+  if (ev.allDay && ev.dateKey) return Date.parse(ev.dateKey + "T00:00:00")
+  if (ev.start) return Date.parse(ev.start)
+  return NaN
+}
+
+// Human countdown like "in 18m" / "in 2h" / "in 3d", or "" when negative/absent.
+function countdown(event, now) {
+  if (!event) return ""
+  var ref = typeof now === "string" ? Date.parse(now) : now.getTime()
+  var start = eventStartTime(event)
+  if (isNaN(ref) || isNaN(start)) return ""
+  var ms = start - ref
+  if (ms <= 0) return ""
+  var minutes = Math.round(ms / 60000)
+  if (minutes < 1) return "now"
+  if (minutes < 60) return "in " + minutes + "m"
+  var hours = Math.round(minutes / 60)
+  if (hours < 24) return "in " + hours + "h"
+  var days = Math.round(hours / 24)
+  return "in " + days + "d"
+}
+
+// Stale if the last successful sync is older than `thresholdMin` minutes.
+function isStale(syncStatus, now, thresholdMin) {
+  if (!syncStatus || syncStatus.state === "never") return true
+  var last = syncStatus.lastOk
+  if (!last) return syncStatus.state !== "ok"
+  var ref = typeof now === "string" ? Date.parse(now) : now.getTime()
+  var t = Date.parse(last)
+  if (isNaN(ref) || isNaN(t)) return true
+  return (ref - t) / 60000 > thresholdMin
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     dateKey: dateKey,
@@ -336,6 +469,14 @@ if (typeof module !== "undefined") {
     clockNeedsSeconds: clockNeedsSeconds,
     clockFormatRing: clockFormatRing,
     nextClockFormat: nextClockFormat,
-    isoWeekLiteral: isoWeekLiteral
+    isoWeekLiteral: isoWeekLiteral,
+    eventIndex: eventIndex,
+    eventsForDate: eventsForDate,
+    taskDueDate: taskDueDate,
+    tasksForDate: tasksForDate,
+    badgeCount: badgeCount,
+    nextEvent: nextEvent,
+    countdown: countdown,
+    isStale: isStale
   }
 }

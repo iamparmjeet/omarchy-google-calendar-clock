@@ -116,3 +116,27 @@ active plugin files (`*.qml/*.js/*.json/*.py/*.sh`); vdirsyncer timer gone from
 service runs cleanly (no tracebacks) and correctly reports the pending
 `gws auth login` as exit 2 / auth state. First real sync will succeed once
 setup.sh completes the one browser consent (Phase 10).
+
+---
+
+## Phase 5 — Model.js (calendar-state logic)
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-20
+
+**What changed:**
+- `Model.js` — added provider-independent calendar-state functions:
+  `eventIndex` (date-keyed, expands multi-day/all-day), `eventsForDate`
+  (sorted, all-day first), `taskDueDate`, `tasksForDate`, `badgeCount`
+  (dueToday|overdue|all), `nextEvent`, `countdown` ("in 18m"), `isStale`.
+  All pure, locale/Qt-free, Node-testable.
+- `sync/schema.py` — `normalize_task` now truncates `due` to a local
+  `YYYY-MM-DD` date (Google's RFC3339 due has a meaningless time part).
+- `tests/test_model.js` — 12 tests (grouping, badge modes, next-event,
+  countdown, stale detection).
+- `tests/test_schema.py` — tightened task-due assertion to the normalized date.
+
+**Gate:** `node tests/test_model.js` → 12/12 pass; `python3 -m unittest
+discover -s tests` → 42/42 pass; `qmllint` clean on both QML files.
+
+**Next:** Phase 6 — QML (BarWidget badge + Panel compact/expanded + settings).

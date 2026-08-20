@@ -292,13 +292,21 @@ def _meet_url(raw: dict) -> str:
 
 
 def normalize_task(raw: dict, list_id: str) -> dict:
-    """Normalize a raw Google Task into the v1 task record."""
+    """Normalize a raw Google Task into the v1 task record.
+
+    ``due`` is normalized to a local ``YYYY-MM-DD`` date (Google stores it as an
+    RFC3339 timestamp whose time-of-day is meaningless).
+    """
+    due = raw.get("due") or ""
+    parsed = parse_datetime(due)
+    if parsed is not None:
+        due = parsed.date().isoformat()
     return {
         "id": raw.get("id", ""),
         "listId": list_id,
         "title": raw.get("title") or "",
         "notes": raw.get("notes") or "",
-        "due": raw.get("due") or "",
+        "due": due,
         "status": raw.get("status") or "needsAction",
         "completed": raw.get("completed") or "",
     }
