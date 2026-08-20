@@ -236,3 +236,27 @@ holiday calendar — so inserts were rejected.
 
 **Verified:** live quick-add writes to `iamparmjeetmishra@gmail.com` (primary)
 and deletes cleanly; `sync.py` reports ok.
+
+---
+
+## Phase 7 fix — post-write latency
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-21
+
+**Problem:** Adding an event took ~8s to show in the panel, because every write
+triggered a full sync that (1) ran an explicit `gws auth status` probe (~3s of
+keyring decryption) and (2) re-discovered calendars + tasklists before
+re-fetching all events sequentially.
+
+**Fix:**
+- `sync/sync.py` — event/task fetches now run in parallel (ThreadPoolExecutor);
+  new `check_auth=False` skips the auth probe (API calls still fail loudly on
+  bad tokens); new `reuse_discovery=True` reuses the last-good calendar/tasklist
+  list for post-write refreshes (a write never changes which lists exist).
+- `sync/mutate.py` — post-write refresh uses `check_auth=False` +
+  `reuse_discovery=True`.
+- `Panel.qml` — on mutate exit, `stateFile.reload()` is called directly so the
+  panel re-reads state.json immediately instead of waiting on the watcher.
+
+**Result:** ~8s → ~1.9s end-to-end for a write; full timer sync unchanged.

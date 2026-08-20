@@ -163,7 +163,11 @@ def _main(argv: list[str]) -> int:
         return _fail("api", str(e))
 
     # Refresh the cached state so the panel reflects the write immediately.
-    return run_sync(cfg, gws_path=gws_path)
+    # Skip the ~3s auth probe (the API calls above already proved the token is
+    # valid) and reuse the last-good calendar/tasklist discovery (a write never
+    # changes which lists exist) so the refresh is just a parallel event+task
+    # re-fetch.
+    return run_sync(cfg, gws_path=gws_path, check_auth=False, reuse_discovery=True)
 
 
 def _plus_hour(hhmm: str) -> str:

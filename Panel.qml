@@ -331,6 +331,7 @@ Panel {
     if (root.bar) root.bar.run("omarchy-shell -q parm.clock refresh")
   }
 
+
   function newEventQuick(text) {
     if (!text) return
     runMutate(["event-quickadd", "--calendar", root.primaryCalendarId, "--text", text])
@@ -404,9 +405,9 @@ Panel {
       } else {
         root.mutateOutput = ""
       }
-      // Always refresh: a successful write re-syncs; a failed one leaves
-      // state.json untouched (preserve-last-good).
-      root.refreshAfterMutate()
+      // The write + re-sync rewrote state.json atomically; force an immediate
+      // reload so the panel updates without waiting for the file watcher.
+      if (stateFile) stateFile.reload()
     }
   }
 

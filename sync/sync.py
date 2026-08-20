@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -150,8 +151,8 @@ def build_state(
         "calendars": [
             {
                 "id": c.get("id", ""),
-                "name": c.get("summary") or c.get("summaryOverride") or c.get("id", ""),
-                "color": c.get("backgroundColor") or "",
+                "name": c.get("summary") or c.get("summaryOverride") or c.get("name") or c.get("id", ""),
+                "color": c.get("backgroundColor") or c.get("color") or "",
                 "visible": True,
                 "primary": bool(c.get("primary")),
             }
@@ -170,11 +171,17 @@ def run_sync(
     gws_path: Optional[str] = None,
     state_path: Optional[Path] = None,
     fetch: bool = True,
+    check_auth: bool = True,
+    reuse_discovery: bool = False,
 ) -> int:
     """Run one full sync. Returns a process exit code.
 
     ``fetch=False`` performs validation + atomic write of an empty state only
-    (used in tests and pre-auth bootstrap).
+    (used in tests and pre-auth bootstrap). ``check_auth=False`` skips the
+    explicit ``gws auth status`` probe (which costs ~3s decrypting the keyring);
+    real API calls still fail with an AuthError if the token is invalid.
+    ``reuse_discovery=True`` skips calendar/tasklist discovery and reuses the
+    lists from the last-good state (fast post-write refresh).
     """
     global STATE_PATH
     target = state_path or STATE_PATH
@@ -206,40 +213,68 @@ def run_sync(
 
     try:
         # Auth check: any auth failure raises AuthError and we stop.
-        auth = gws_adapter.auth_status(exe)
-        if auth.get("auth_method") in (None, "none"):
-            raise gws_adapter.AuthError("not authenticated — run `gws auth login`")
+        if check_auth:
+            auth = gws_adapter.auth_status(exe)
+            if auth.get("auth_method") in (None, "none"):
+                raise gws_adapter.AuthError("not authenticated — run `gws auth login`")
 
-        raw_calendars = gws_adapter.list_calendars(exe)
-        calendars = filter_calendars(raw_calendars, cfg)
+        if reuse_discovery:
+            prior = load_last_good(target)
+            if prior is None:
+                # No prior state to lean on — fall back to full discovery.
+                reuse_discovery = False
+            else:
+                calendars = prior.get("calendars", [])
+                tasklists = prior.get("tasklists", [])
+
+        if not reuse_discovery:
+            raw_calendars = gws_adapter.list_calendars(exe)
+            calendars = filter_calendars(raw_calendars, cfg)
+            raw_tasklists = gws_adapter.list_tasklists(exe)
+            tasklists = filter_tasklists(raw_tasklists, cfg)
+
         calendar_ids = [c["id"] for c in calendars]
-
-        raw_tasklists = gws_adapter.list_tasklists(exe)
-        tasklists = filter_tasklists(raw_tasklists, cfg)
+        tasklist_ids = [t["id"] for t in tasklists]
 
         time_min, time_max = compute_window(cfg, timezone)
 
         events: list[dict] = []
-        for cal_id in calendar_ids:
+
+        def _fetch_events(cal_id: str) -> list[dict]:
+            out: list[dict] = []
             try:
                 for raw in gws_adapter.list_events(cal_id, time_min, time_max, gws_path=exe):
                     if raw.get("status") == "cancelled":
                         continue
-                    events.append(normalize_event(raw, cal_id, timezone))
+                    out.append(normalize_event(raw, cal_id, timezone))
             except gws_adapter.GwsError:
                 # One calendar failing shouldn't abort the whole sync.
-                continue
+                pass
+            return out
 
-        tasks: list[dict] = []
-        for tl in tasklists:
-            tl_id = tl.get("id")
+        def _fetch_tasks(tl_id: str) -> list[dict]:
+            out: list[dict] = []
             try:
                 for raw in gws_adapter.list_tasks(tl_id, due_max=time_max, gws_path=exe):
                     if raw.get("status") == "completed":
                         continue
-                    tasks.append(normalize_task(raw, tl_id))
+                    out.append(normalize_task(raw, tl_id))
             except gws_adapter.GwsError:
-                continue
+                pass
+            return out
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            event_futures = {pool.submit(_fetch_events, c): "event" for c in calendar_ids}
+            task_futures = {pool.submit(_fetch_tasks, t["id"]): "task" for t in tasklists}
+
+            events = []
+            tasks = []
+            for fut in as_completed(list(event_futures) + list(task_futures)):
+                kind = event_futures.get(fut) or task_futures.get(fut)
+                if kind == "event":
+                    events.extend(fut.result())
+                else:
+                    tasks.extend(fut.result())
 
         events = sort_events(dedupe(events))
         tasks = sort_tasks(tasks)
