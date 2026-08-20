@@ -31,13 +31,14 @@ status_path = "$HOME/.local/state/vdirsyncer/status/"
 [pair google]
 a = "google_remote"
 b = "google_local"
-collections = ["from a", "from b"]
+# A single calendar pointed at directly by url: skip discovery entirely.
+collections = null
 conflict_resolution = "a wins"
 metadata = ["color"]
 
 [storage google_remote]
 type = "caldav"
-url = "https://apidata.googleusercontent.com/caldav/v2/$EMAIL/events"
+url = "https://www.google.com/calendar/dav/$EMAIL/events/"
 username = "$EMAIL"
 password = "$APP_PASSWORD"
 
@@ -70,9 +71,7 @@ EOF
 
 chmod 600 "$VDIRSYNCER_CONFIG"
 
-echo "Config written. Discovering collections..."
-vdirsyncer discover google
-echo "Running initial sync..."
+echo "Config written. Running initial sync..."
 vdirsyncer sync
 echo "Initial sync complete. Verifying khal can read it..."
 khal list today 7d || true
