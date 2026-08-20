@@ -1,0 +1,299 @@
+"""Sync engine for parm.clock — fetch Google Calendar + Tasks and atomically
+write ``~/.local/state/parm.clock/state.json``.
+
+Pipeline (per docs/ARCHITECTURE.md):
+
+    load+validate config
+    -> verify gws exists
+    -> auth check (gws auth status)
+    -> calendarList.list -> filter calendars
+    -> tasklists.list
+    -> window (pastDays / futureDays)
+    -> events.list per calendar (singleEvents=true, orderBy=startTime)
+    -> tasks.list per list (due window)
+    -> normalize -> dedupe -> sort -> validate
+    -> merge syncStatus
+    -> atomic write (tmp -> fsync -> rename)
+
+Exit codes: 0 ok, 2 auth, 3 api, 4 config, 5 io. On any failure a previously
+valid ``state.json`` is preserved.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+# Allow running both as ``python3 sync/sync.py`` (systemd) and as a package
+# module (``python3 -m sync.sync`` or tests importing ``sync.sync``).
+if __package__ in (None, ""):
+    _ROOT = Path(__file__).resolve().parent.parent
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
+    from sync import gws_adapter
+    from sync.config import DEFAULT_CONFIG, load_config, validate_config
+    from sync.schema import empty_state, normalize_event, normalize_task, utc_now, validate_state
+else:
+    from . import gws_adapter
+    from .config import DEFAULT_CONFIG, load_config, validate_config
+    from .schema import empty_state, normalize_event, normalize_task, utc_now, validate_state
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", "~/.local/state")).expanduser() / "parm.clock"
+STATE_PATH = STATE_DIR / "state.json"
+
+
+def now_iso() -> str:
+    return utc_now().isoformat().replace("+00:00", "Z")
+
+
+def compute_window(cfg: dict, tz_name: str) -> tuple[str, str]:
+    """Return (timeMin, timeMax) RFC3339 bounds for the sync window.
+
+    timeMin is the lower bound on an event's *end*; timeMax the upper bound on
+    its *start* (per the Calendar API). We widen by pastDays/futureDays from
+    today, using the local timezone so the window aligns to local days.
+    """
+    tz = ZoneInfo(tz_name)
+    today = datetime.now(tz).date()
+    start = datetime.combine(today - timedelta(days=int(cfg.get("pastDays", 7))), datetime.min.time(), tzinfo=tz)
+    end = datetime.combine(today + timedelta(days=int(cfg.get("futureDays", 60)) + 1), datetime.min.time(), tzinfo=tz)
+    return start.isoformat(), end.isoformat()
+
+
+def filter_calendars(calendars: list[dict], cfg: dict) -> list[dict]:
+    hidden = set(cfg.get("hiddenCalendars", []))
+    out = []
+    for cal in calendars:
+        if cal.get("hidden"):
+            continue
+        if cal.get("id") in hidden:
+            continue
+        out.append(cal)
+    return out
+
+
+def filter_tasklists(tasklists: list[dict], cfg: dict) -> list[dict]:
+    allow = set(cfg.get("tasklistIds", []))
+    if not allow:
+        return tasklists
+    return [tl for tl in tasklists if tl.get("id") in allow]
+
+
+def dedupe(events: list[dict]) -> list[dict]:
+    """Remove duplicate events (same id in multiple calendars), keep first."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for ev in events:
+        key = ev.get("id")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(ev)
+    return out
+
+
+def sort_events(events: list[dict]) -> list[dict]:
+    def key(ev: dict):
+        return (ev.get("dateKey") or "", ev.get("start") or "")
+    return sorted(events, key=key)
+
+
+def sort_tasks(tasks: list[dict]) -> list[dict]:
+    def key(t: dict):
+        return (t.get("due") or "9999-99-99", t.get("title") or "")
+    return sorted(tasks, key=key)
+
+
+def atomic_write(path: Path, data: str) -> None:
+    """Write ``data`` to ``path`` atomically (tmp -> fsync -> rename)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    tmp.replace(path)
+
+
+def load_last_good(target: Optional[Path] = None) -> Optional[dict]:
+    """Return the current state.json if it validates, else None."""
+    path = target or STATE_PATH
+    try:
+        raw = path.read_text(encoding="utf-8")
+        state = json.loads(raw)
+    except (OSError, ValueError):
+        return None
+    if validate_state(state):
+        return None
+    return state
+
+
+def build_state(
+    calendars: list[dict],
+    events: list[dict],
+    tasklists: list[dict],
+    tasks: list[dict],
+    timezone: str,
+    sync_state: str,
+    message: str,
+    last_ok: Optional[str],
+) -> dict:
+    return {
+        "version": 1,
+        "syncedAt": now_iso(),
+        "source": "google",
+        "timezone": timezone,
+        "calendars": [
+            {
+                "id": c.get("id", ""),
+                "name": c.get("summary") or c.get("summaryOverride") or c.get("id", ""),
+                "color": c.get("backgroundColor") or "",
+                "visible": True,
+            }
+            for c in calendars
+        ],
+        "events": events,
+        "tasklists": [{"id": t.get("id", ""), "title": t.get("title") or ""} for t in tasklists],
+        "tasks": tasks,
+        "syncStatus": {"state": sync_state, "message": message, "lastOk": last_ok},
+    }
+
+
+def run_sync(
+    cfg: Optional[dict] = None,
+    *,
+    gws_path: Optional[str] = None,
+    state_path: Optional[Path] = None,
+    fetch: bool = True,
+) -> int:
+    """Run one full sync. Returns a process exit code.
+
+    ``fetch=False`` performs validation + atomic write of an empty state only
+    (used in tests and pre-auth bootstrap).
+    """
+    global STATE_PATH
+    target = state_path or STATE_PATH
+
+    if cfg is None:
+        cfg = load_config()
+    else:
+        # Merge over defaults so partial configs (e.g. from tests) validate.
+        cfg = {**DEFAULT_CONFIG, **cfg}
+
+    config_errors = validate_config(cfg)
+    if config_errors:
+        _preserve_or_emit_failure(target, cfg, "error", "; ".join(config_errors))
+        return 4
+
+    timezone = cfg.get("timezone", "Asia/Kolkata")
+
+    # Locate gws.
+    try:
+        exe = gws_adapter._find_gws(gws_path or cfg.get("gwsPath"))
+    except gws_adapter.GwsNotFound as e:
+        _preserve_or_emit_failure(target, cfg, "error", str(e))
+        return 5
+
+    if not fetch:
+        state = empty_state(timezone, "never", "not yet synced")
+        atomic_write(target, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+        return 0
+
+    try:
+        # Auth check: any auth failure raises AuthError and we stop.
+        auth = gws_adapter.auth_status(exe)
+        if auth.get("auth_method") in (None, "none"):
+            raise gws_adapter.AuthError("not authenticated — run `gws auth login`")
+
+        raw_calendars = gws_adapter.list_calendars(exe)
+        calendars = filter_calendars(raw_calendars, cfg)
+        calendar_ids = [c["id"] for c in calendars]
+
+        raw_tasklists = gws_adapter.list_tasklists(exe)
+        tasklists = filter_tasklists(raw_tasklists, cfg)
+
+        time_min, time_max = compute_window(cfg, timezone)
+
+        events: list[dict] = []
+        for cal_id in calendar_ids:
+            try:
+                for raw in gws_adapter.list_events(cal_id, time_min, time_max, gws_path=exe):
+                    if raw.get("status") == "cancelled":
+                        continue
+                    events.append(normalize_event(raw, cal_id, timezone))
+            except gws_adapter.GwsError:
+                # One calendar failing shouldn't abort the whole sync.
+                continue
+
+        tasks: list[dict] = []
+        for tl in tasklists:
+            tl_id = tl.get("id")
+            try:
+                for raw in gws_adapter.list_tasks(tl_id, due_max=time_max, gws_path=exe):
+                    if raw.get("status") == "completed":
+                        continue
+                    tasks.append(normalize_task(raw, tl_id))
+            except gws_adapter.GwsError:
+                continue
+
+        events = sort_events(dedupe(events))
+        tasks = sort_tasks(tasks)
+
+        state = build_state(
+            calendars, events, tasklists, tasks,
+            timezone, "ok", "", now_iso(),
+        )
+
+        errors = validate_state(state)
+        if errors:
+            # Do NOT overwrite good state with an invalid document.
+            _preserve_or_emit_failure(target, cfg, "error", "invalid state: " + "; ".join(errors))
+            return 3
+
+        atomic_write(target, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+        return 0
+
+    except gws_adapter.AuthError as e:
+        _preserve_or_emit_failure(target, cfg, "auth", str(e))
+        return 2
+    except gws_adapter.ApiError as e:
+        _preserve_or_emit_failure(target, cfg, "error", str(e))
+        return 3
+    except gws_adapter.GwsNotFound as e:
+        _preserve_or_emit_failure(target, cfg, "error", str(e))
+        return 5
+    except OSError as e:
+        _preserve_or_emit_failure(target, cfg, "error", f"io error: {e}")
+        return 5
+
+
+def _preserve_or_emit_failure(target: Path, cfg: dict, sync_state: str, message: str) -> None:
+    """Preserve last-good state; if none exists, write a valid error state."""
+    if load_last_good(target) is not None:
+        # A valid prior state exists; leave it untouched (syncStatus stays as
+        # it was last time). We surface the failure via stderr only.
+        print(f"sync failed ({sync_state}): {message}", file=sys.stderr)
+        return
+    # No good state yet — emit a valid empty document marked with the failure,
+    # so the UI still has something schema-valid to render.
+    state = empty_state(cfg.get("timezone", "Asia/Kolkata"), sync_state, message)
+    try:
+        atomic_write(target, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = argv if argv is not None else sys.argv[1:]
+    gws_path = None
+    if "--gws" in args:
+        gws_path = args[args.index("--gws") + 1]
+    return run_sync(gws_path=gws_path)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

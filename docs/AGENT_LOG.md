@@ -42,3 +42,77 @@ active plugin files (`*.qml/*.js/*.json/*.py/*.sh`); vdirsyncer timer gone from
 `omarchy plugin validate` exit 0.
 
 **Next:** Phase 1 — schema v1 + fixtures + validation tests.
+
+---
+
+## Phase 1 — Schema v1 + config + fixtures + validation tests
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-20
+
+**What changed:**
+- `sync/schema.py` — v1 data contract, validation, and Google→internal
+  normalization (timed/all-day/multi-day/cross-midnight/recurring/meet URL;
+  task due/status/completed). All-day exclusive end collapsed to inclusive.
+- `sync/config.py` — sync config (`timezone`, `pastDays`, `futureDays`,
+  `gwsPath`, `syncIntervalMin`, `hiddenCalendars`, `tasklistIds`) with defaults,
+  validation, atomic save.
+- `sync/__init__.py`.
+- `tests/fixtures/{events,tasks,state.golden}.json`.
+- `tests/test_schema.py` — 25 tests: RFC3339/date parsing (naive rejected),
+  UTC→Kolkata, all-day multi-day inclusive end, recurring flag, meet URL, and
+  full state validation.
+
+**Gate:** `python3 -m unittest discover -s tests` → 25/25 pass.
+
+## Phase 2 — gws adapter
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-20
+
+**What changed:**
+- `sync/gws_adapter.py` — wraps the verified gws CLI contract (invocation
+  shape, exit codes 0/1/2/3/4/5, JSON error bodies on stdout+stderr). Typed
+  helpers for calendarList/events/tasklists/tasks list + insert/patch/delete/
+  quickAdd for events and tasks. Classifies `AuthError`/`ApiError`/`GwsError`/
+  `GwsNotFound`. `auth_status()` for the two-word `gws auth status` subcommand.
+- `tests/test_gws_adapter.py` — 9 tests against a fake gws asserting exact CLI
+  shape and failure classification.
+
+**Gate:** 34/34 tests pass (schema + adapter).
+
+## Phase 3 — Sync engine
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-20
+
+**What changed:**
+- `sync/sync.py` — full pipeline: config→gws path→auth check→calendarList→
+  tasklists→window(past7/future60)→events(singleEvents, orderBy=startTime)→
+  tasks→normalize→dedupe→sort→validate→atomic write. Exit 0/2/3/4/5; preserves
+  last-good on failure; emits a valid error state when none exists. Runs both
+  as `python3 sync/sync.py` (systemd) and as a package module.
+- `tests/test_sync.py` — 8 tests: window bounds, dedupe/sort, full sync writes
+  valid state, unauthenticated preserves last-good byte-for-byte, no-prior-state
+  emits error state, invalid config, no stray tmp files.
+
+**Gate:** 42/42 tests pass. `python3 sync/sync.py` classifies the current
+`auth_method: none` as auth (exit 2) and emits a valid `auth` state.
+
+## Phase 4 — systemd service + timer
+
+**Agent:** deepseek/deepseek-v4-pro
+**Date:** 2026-08-20
+
+**What changed:**
+- `systemd/parm.clock-sync.service` — Type=oneshot, absolute python3 path,
+  TimeoutStartSec=120, Nice=10.
+- `systemd/parm.clock-sync.timer` — OnBootSec=2min, OnUnitActiveSec=5min,
+  Persistent=true.
+- Installed both into `~/.config/systemd/user/`, `daemon-reload`, enabled+started
+  the timer.
+
+**Gate:** `systemctl --user list-timers` shows `parm.clock-sync.timer`; the
+service runs cleanly (no tracebacks) and correctly reports the pending
+`gws auth login` as exit 2 / auth state. First real sync will succeed once
+setup.sh completes the one browser consent (Phase 10).

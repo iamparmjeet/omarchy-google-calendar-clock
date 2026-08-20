@@ -1,0 +1,13 @@
+[Unit]
+Description=Sync Google Calendar and Tasks for parm.clock (gws)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/parm/.local/share/mise/installs/python/latest/bin/python3 /home/parm/.config/omarchy/plugins/parm.clock/sync/sync.py
+TimeoutStartSec=120
+Nice=10
+
+[Install]
+WantedBy=default.target

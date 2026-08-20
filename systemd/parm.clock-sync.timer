@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync Google Calendar and Tasks for parm.clock every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

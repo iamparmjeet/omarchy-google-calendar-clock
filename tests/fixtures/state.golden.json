@@ -1,0 +1,56 @@
+{
+  "description": "A complete, valid v1 state document used as the golden expected output for sync and for UI-model tests.",
+  "version": 1,
+  "syncedAt": "2026-08-20T18:00:00Z",
+  "source": "google",
+  "timezone": "Asia/Kolkata",
+  "calendars": [
+    {"id": "primary", "name": "parm@example.com", "color": "#4285F4", "visible": true},
+    {"id": "work", "name": "Work", "color": "#16A765", "visible": false}
+  ],
+  "events": [
+    {
+      "id": "evt_timed_1",
+      "calendarId": "primary",
+      "title": "Team meeting",
+      "start": "2026-08-20T09:00:00+05:30",
+      "end": "2026-08-20T10:00:00+05:30",
+      "allDay": false,
+      "dateKey": "2026-08-20",
+      "location": "Room 4",
+      "description": "",
+      "htmlLink": "https://calendar.google.com/event?eid=timed1",
+      "meetUrl": "",
+      "recurring": false
+    },
+    {
+      "id": "evt_allday_1",
+      "calendarId": "primary",
+      "title": "Holiday",
+      "start": "2026-08-15",
+      "end": "2026-08-15",
+      "allDay": true,
+      "dateKey": "2026-08-15",
+      "location": "",
+      "description": "",
+      "htmlLink": "",
+      "meetUrl": "",
+      "recurring": false
+    }
+  ],
+  "tasklists": [
+    {"id": "default", "title": "My Tasks"}
+  ],
+  "tasks": [
+    {
+      "id": "task_1",
+      "listId": "default",
+      "title": "Reply to email",
+      "notes": "",
+      "due": "2026-08-20",
+      "status": "needsAction",
+      "completed": ""
+    }
+  ],
+  "syncStatus": {"state": "ok", "message": "", "lastOk": "2026-08-20T18:00:00Z"}
+}
