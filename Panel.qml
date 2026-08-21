@@ -533,25 +533,53 @@ Panel {
                 }
               }
 
-              // Week view — 7 columns, per-day events — min-height keeps panel stable across pill switches
+              // Week view — redesigned: pill header + balanced 7 cards with subtle weekend tint + chips
               Item {
                 visible: root.viewMode === "week"
                 width: parent.width
-                height: Math.max(Style.space(280), weekCol.implicitHeight)
+                height: Math.max(Style.space(300), weekCol.implicitHeight)
                 Column {
                   id: weekCol
                   width: parent.width
-                  spacing: Style.space(8)
+                  spacing: Style.space(10)
+                  // Header: prev | pill (Wk + range) | next  — own aesthetic, not github clone
                   Row {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: Style.space(4)
-                    PanelActionButton { iconText: "󰅁"; tooltipText: "Previous week"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: { var nd = Model.stepMonth(viewYear, viewMonth, 0); /* fallback */ moveWeek(-1) } }
-                    Text { anchors.verticalCenter: parent.verticalCenter; width: Style.space(180); horizontalAlignment: Text.AlignHCenter; text: weekHeadingText(); color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.body; font.bold: true }
+                    spacing: Style.space(8)
+                    PanelActionButton { iconText: "󰅁"; tooltipText: "Previous week"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: moveWeek(-1) }
+                    Rectangle {
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: weekHeading.implicitWidth + Style.space(22)
+                      height: Style.space(22)
+                      radius: height / 2
+                      color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06)
+                      border.width: Style.spacing.hairline
+                      border.color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10)
+                      Text {
+                        id: weekHeading
+                        anchors.centerIn: parent
+                        text: weekHeadingText()
+                        color: root.contentForeground
+                        font.family: root.contentFontFamily
+                        font.pixelSize: Style.font.caption
+                        font.letterSpacing: 0.8
+                        font.bold: true
+                      }
+                    }
                     PanelActionButton { iconText: "󰅂"; tooltipText: "Next week"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: moveWeek(1) }
+                    PanelActionButton {
+                      visible: !isCurrentWeek()
+                      anchors.verticalCenter: parent.verticalCenter
+                      iconText: "󰥔"
+                      tooltipText: "Back to this week"
+                      foreground: root.contentForeground
+                      fontFamily: root.contentFontFamily
+                      onClicked: goToToday()
+                    }
                   }
                   Row {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: Style.space(2)
+                    spacing: Style.space(4)
                     Repeater {
                       model: root.weekKeys
                       Rectangle {
@@ -560,28 +588,68 @@ Panel {
                         readonly property var evs: root.visibleEventsOn(key)
                         readonly property bool isToday: key === root.todayKey
                         readonly property bool isSelected: key === root.selectedKey
-                        width: Style.space(74); height: Style.space(120); radius: Style.cornerRadius + 2
-                        color: isSelected ? Style.selectedFillFor(root.contentForeground, Color.accent) : isToday ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06) : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.03)
+                        readonly property bool isWeekend: { var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key)); if(!m) return false; var d=new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10)); var wd=d.getDay(); return wd===0||wd===6 }
+                        width: Style.space(76); height: Style.space(150); radius: Style.cornerRadius + 3
+                        color: isSelected ? Style.selectedFillFor(root.contentForeground, Color.accent)
+                          : isToday ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.09)
+                          : isWeekend ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.02)
+                          : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.045)
                         border.width: isSelected || isToday ? Style.spacing.hairline : 0
                         border.color: isSelected ? Style.selectedBorderFor(root.contentForeground, Color.accent) : Style.normalBorderFor(root.contentForeground, Color.accent)
+                        // Today accent top line
+                        Rectangle { visible: isToday && !isSelected; anchors.top: parent.top; anchors.horizontalCenter: parent.horizontalCenter; width: parent.width - Style.space(16); height: Style.space(2); radius: 1; color: Color.accent; opacity: 0.95 }
                         Column {
-                          anchors.fill: parent; anchors.margins: Style.space(6); spacing: Style.space(4)
-                          Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: weekDayLabel(key); color: isToday ? Style.selectedStateColor(root.contentForeground, Color.accent) : Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.bold: isToday || isSelected; font.letterSpacing: 0.5 }
-                          Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: weekDayNum(key); color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.body; font.bold: isToday }
-                          Rectangle { width: parent.width; height: Style.spacing.hairline; color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.12) }
+                          anchors.fill: parent; anchors.margins: Style.space(6); spacing: Style.space(5)
                           Column {
-                            width: parent.width; spacing: Style.space(3)
+                            width: parent.width; spacing: Style.space(1)
+                            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: weekDayShort(key); color: isToday ? Style.selectedStateColor(root.contentForeground, Color.accent) : isWeekend ? Qt.darker(root.contentForeground,1.6) : Qt.darker(root.contentForeground,1.35); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: isToday || isSelected }
+                            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: weekDayNum(key); color: isSelected ? Style.selectedStateColor(root.contentForeground, Color.accent) : root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: isToday ? 20 : 18; font.bold: isToday || isSelected }
+                            Text {
+                              visible: evs.length > 0
+                              width: parent.width; horizontalAlignment: Text.AlignHCenter
+                              text: evs.length === 1 ? "1 event" : evs.length + " events"
+                              color: Qt.darker(root.contentForeground, 1.8); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption - 1; font.italic: true
+                            }
+                          }
+                          Rectangle { width: parent.width; height: Style.spacing.hairline; color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.11) }
+                          Column {
+                            width: parent.width; spacing: Style.space(4)
                             Repeater {
                               model: evs.slice(0,3)
-                              Row {
+                              Rectangle {
                                 required property var modelData
-                                width: parent.width; spacing: Style.space(4)
-                                Rectangle { width: Style.space(3); height: Style.space(10); radius: 1; anchors.verticalCenter: parent.verticalCenter; color: root.dotColor(modelData) }
-                                Text { width: parent.width - 3 - Style.space(4); text: modelData.title; color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+                                readonly property color chipColor: root.dotColor(modelData)
+                                width: parent.width; height: Style.space(18); radius: Style.cornerRadius
+                                color: Qt.rgba(chipColor.r, chipColor.g, chipColor.b, 0.14)
+                                border.width: Style.spacing.hairline; border.color: Qt.rgba(chipColor.r, chipColor.g, chipColor.b, 0.24)
+                                Row {
+                                  anchors.fill: parent; anchors.leftMargin: Style.space(5); anchors.rightMargin: Style.space(4); spacing: Style.space(4)
+                                  Rectangle { width: Style.space(2); height: Style.space(10); radius: 1; anchors.verticalCenter: parent.verticalCenter; color: chipColor }
+                                  Text {
+                                    visible: !modelData.allDay
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: timeStart(modelData)
+                                    color: Qt.darker(root.contentForeground, 1.5); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption - 1
+                                  }
+                                  Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: Math.max(0, parent.width - 2 - Style.space(4) - (modelData.allDay ? 0 : 32) - Style.space(8))
+                                    text: modelData.title; color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight
+                                  }
+                                }
                               }
                             }
-                            Text { visible: evs.length > 3; width: parent.width; text: "+" + (evs.length-3) + " more"; color: Qt.darker(root.contentForeground,1.6); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.italic: true }
-                            Text { visible: evs.length === 0; width: parent.width; text: "—"; color: Qt.darker(root.contentForeground,2.0); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; horizontalAlignment: Text.AlignHCenter }
+                            Rectangle {
+                              visible: evs.length > 3
+                              width: parent.width; height: Style.space(16); radius: Style.cornerRadius
+                              color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06)
+                              Text { anchors.centerIn: parent; text: "+" + (evs.length-3) + " more"; color: Qt.darker(root.contentForeground,1.6); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.italic: true }
+                            }
+                            Text {
+                              visible: evs.length === 0
+                              width: parent.width; horizontalAlignment: Text.AlignHCenter
+                              text: "—  Free  —"; color: Qt.darker(root.contentForeground,2.1); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.italic: true; topPadding: Style.space(4)
+                            }
                           }
                         }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectDay(key) }
@@ -994,6 +1062,12 @@ Panel {
     var et=em?em[1]:""
     return et!=="" ? st+"–"+et : st
   }
+  function weekDayShort(key){
+    var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key))
+    if(!m) return String(key)
+    var d=new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10))
+    return Qt.formatDate(d, "ddd").toUpperCase()
+  }
   function weekDayLabel(key){
     var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key))
     if(!m) return key
@@ -1004,6 +1078,10 @@ Panel {
     var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key))
     return m ? m[3] : ""
   }
+  function timeStart(ev){
+    var s=ev.start||""; var m=/T(\d{2}:\d{2})/.exec(s); return m?m[1]:""
+  }
+  function isCurrentWeek(){ return root.weekKeys.indexOf(root.todayKey) !== -1 }
   function weekHeadingText(){
     if(root.weekKeys.length===0) return ""
     var a=root.weekKeys[0], b=root.weekKeys[6]
@@ -1011,7 +1089,8 @@ Panel {
     if(!ma||!mb) return a+" – "+b
     var da=new Date(parseInt(ma[1],10), parseInt(ma[2],10)-1, parseInt(ma[3],10))
     var db=new Date(parseInt(mb[1],10), parseInt(mb[2],10)-1, parseInt(mb[3],10))
-    return Qt.formatDate(da,"MMM d") + " – " + Qt.formatDate(db,"MMM d, yyyy")
+    var wk = Model.isoWeek(da.getFullYear(), da.getMonth(), da.getDate())
+    return "W" + wk + " · " + Qt.formatDate(da,"MMM d") + " – " + Qt.formatDate(db,"MMM d, yyyy")
   }
   function upcomingLabel(key){
     var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key))
