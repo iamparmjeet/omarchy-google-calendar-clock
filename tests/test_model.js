@@ -245,6 +245,75 @@ function testTaskGroups() {
 
 // --------------------------------------------------------------------------
 
+// ---- view-facing helpers (keyToDate / time text / weeks / visible lists) --
+
+function testKeyToDate() {
+  const d = Model.keyToDate("2026-08-20");
+  assert.strictEqual(d.getFullYear(), 2026);
+  assert.strictEqual(d.getMonth(), 7);
+  assert.strictEqual(d.getDate(), 20);
+  assert.strictEqual(Model.keyToDate("nope"), null);
+}
+
+function testDayNumAndWeekend() {
+  assert.strictEqual(Model.dayNum("2026-08-20"), 20);
+  assert.strictEqual(Model.isWeekendKey("2026-08-22"), true); // saturday
+  assert.strictEqual(Model.isWeekendKey("2026-08-20"), false); // thursday
+  assert.strictEqual(Model.isWeekendKey("garbage"), false);
+}
+
+function testStartTimeTextAndEventTimeRange() {
+  assert.strictEqual(Model.startTimeText(events[0]), "09:00");
+  assert.strictEqual(Model.eventTimeRange(events[0]), "09:00–10:00");
+  assert.strictEqual(Model.eventTimeRange({ start: "", end: "" }), "");
+  // start parses but end does not: bare start time
+  assert.strictEqual(Model.eventTimeRange({ start: "2026-08-20T09:00:00Z", end: "" }), "09:00");
+}
+
+function testStepWeek() {
+  assert.strictEqual(Model.stepWeek("2026-08-20", 1), "2026-08-27");
+  assert.strictEqual(Model.stepWeek("2026-08-20", -1), "2026-08-13");
+  // Crosses a month boundary.
+  assert.strictEqual(Model.stepWeek("2026-08-31", 1), "2026-09-07");
+  assert.strictEqual(Model.stepWeek("garbage", 1), "garbage");
+}
+
+function testWeekHeadingParts() {
+  const keys = Model.weekKeysFor("2026-08-20", 1); // thursday -> mon 08-17 .. sun 08-23
+  const parts = Model.weekHeadingParts(keys);
+  assert.strictEqual(parts.week, 34);
+  assert.strictEqual(parts.startKey, "2026-08-17");
+  assert.strictEqual(parts.endKey, "2026-08-23");
+  assert.strictEqual(Model.weekHeadingParts([]), null);
+}
+
+function testVisibleEventsOn() {
+  const idx = Model.eventIndex(events);
+  const visible = Model.visibleEventsOn(idx, "2026-08-20", ["calA"]);
+  // e1/e2 belong to no calendar (undefined calendarId) so nothing is hidden.
+  assert.deepStrictEqual(visible.map((e) => e.id), ["e2", "e1"]);
+  const hidden = Model.visibleEventsOn(
+    Model.eventIndex([{ id: "h1", dateKey: "2026-08-20", calendarId: "calA" }]),
+    "2026-08-20",
+    ["calA"]
+  );
+  assert.deepStrictEqual(hidden, []);
+}
+
+function testVisibleUpcomingGroupsAndSummary() {
+  const idx = Model.eventIndex(events);
+  const groups = Model.visibleUpcomingGroups(idx, "2026-08-20", 14, []);
+  assert.deepStrictEqual(groups.map((g) => g.key), ["2026-08-20", "2026-08-21"]);
+  // e2 (multi-day, no calendarId) hidden when every calendar is hidden? No —
+  // undefined calendarId is never in the hidden list; hide via summary limit.
+  const summary = Model.upcomingSummary(idx, "2026-08-20", 14, [], 2);
+  assert.strictEqual(summary.length, 2);
+  assert.deepStrictEqual(
+    Model.upcomingSummary(idx, "2026-08-20", 14, []).map((e) => e.id),
+    ["e2", "e1", "e3"]
+  );
+}
+
 const tests = [
   testEventIndex,
   testEventsForDateAllDayFirst,
@@ -272,6 +341,13 @@ const tests = [
   testWeekKeysFor,
   testUpcomingGroups,
   testTaskGroups,
+  testKeyToDate,
+  testDayNumAndWeekend,
+  testStartTimeTextAndEventTimeRange,
+  testStepWeek,
+  testWeekHeadingParts,
+  testVisibleEventsOn,
+  testVisibleUpcomingGroupsAndSummary,
 ];
 
 let failed = 0;

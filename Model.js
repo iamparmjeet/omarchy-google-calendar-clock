@@ -609,6 +609,99 @@ function taskGroups(tasks, todayKey) {
   return { overdue: overdue, today: todayArr, upcoming: upcoming, undated: undated }
 }
 
+// ---- View-facing helpers used by the QML (kept here so they are node-testable).
+//      Qt.formatDate formatting stays in the QML; everything else — parsing,
+//      grouping, time-text extraction — lives here.
+
+// A local-midnight Date for a YYYY-MM-DD key, or null. The QML wraps this in
+// Qt.formatDate(); constructing the Date here keeps parsing testable.
+function keyToDate(key) {
+  var p = parseDateKey(key)
+  if (!p) return null
+  return new Date(p.year, p.month, p.day)
+}
+
+function dayNum(key) {
+  var p = parseDateKey(key)
+  return p ? p.day : 0
+}
+
+function isWeekendKey(key) {
+  var p = parseDateKey(key)
+  if (!p) return false
+  var dow = new Date(p.year, p.month, p.day).getDay()
+  return dow === 0 || dow === 6
+}
+
+// "HH:MM" for an event's start, "" when it has no parseable time.
+function startTimeText(ev) {
+  var m = /T(\d{2}:\d{2})/.exec(String((ev && ev.start) || ""))
+  return m ? m[1] : ""
+}
+
+// "HH:MM–HH:MM" (en dash) for a timed event, "HH:MM" when no end, "" when
+// neither parses.
+function eventTimeRange(ev) {
+  var s = startTimeText(ev)
+  if (s === "") return ""
+  var e = /T(\d{2}:\d{2})/.exec(String((ev && ev.end) || ""))
+  return e ? s + "–" + e[1] : s
+}
+
+// The key `delta` weeks away from `key`, on the same weekday.
+function stepWeek(key, delta) {
+  var d = keyToDate(key)
+  if (!d) return key
+  d.setDate(d.getDate() + delta * 7)
+  return dateKey(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+// {week, startKey, endKey} for a 7-key week array (as weekKeysFor returns),
+// or null for an empty/short array. The QML formats the keys for the heading.
+function weekHeadingParts(weekKeys) {
+  if (!weekKeys || weekKeys.length < 7) return null
+  var start = keyToDate(weekKeys[0])
+  if (!start) return null
+  return {
+    week: isoWeek(start.getFullYear(), start.getMonth(), start.getDate()),
+    startKey: weekKeys[0],
+    endKey: weekKeys[6]
+  }
+}
+
+// eventsForDate with calendars hidden via shell.json applied.
+function visibleEventsOn(index, dateKey, hiddenCalendars) {
+  var hidden = hiddenCalendars || []
+  return eventsForDate(index, dateKey).filter(function(ev) {
+    return hidden.indexOf(ev.calendarId) === -1
+  })
+}
+
+// upcomingGroups with hidden calendars applied — the model behind the
+// UPCOMING view (only days that have at least one visible event).
+function visibleUpcomingGroups(index, startKey, days, hiddenCalendars) {
+  var hidden = hiddenCalendars || []
+  return upcomingGroups(index, startKey, days).map(function(g) {
+    return {
+      key: g.key,
+      events: g.events.filter(function(ev) { return hidden.indexOf(ev.calendarId) === -1 })
+    }
+  }).filter(function(g) { return g.events.length > 0 })
+}
+
+// Flat list of visible upcoming events (first `limit`), for the summary card.
+function upcomingSummary(index, startKey, days, hiddenCalendars, limit) {
+  var out = []
+  var groups = visibleUpcomingGroups(index, startKey, days, hiddenCalendars)
+  for (var i = 0; i < groups.length; i++) {
+    var evs = groups[i].events
+    for (var j = 0; j < evs.length; j++) out.push(evs[j])
+  }
+  if (typeof limit === "number" && out.length > limit) return out.slice(0, limit)
+  return out
+}
+
+
 if (typeof module !== "undefined") {
   module.exports = {
     dateKey: dateKey,
@@ -656,6 +749,16 @@ if (typeof module !== "undefined") {
     eventPhase: eventPhase,
     weekKeysFor: weekKeysFor,
     upcomingGroups: upcomingGroups,
-    taskGroups: taskGroups
+    taskGroups: taskGroups,
+    keyToDate: keyToDate,
+    dayNum: dayNum,
+    isWeekendKey: isWeekendKey,
+    startTimeText: startTimeText,
+    eventTimeRange: eventTimeRange,
+    stepWeek: stepWeek,
+    weekHeadingParts: weekHeadingParts,
+    visibleEventsOn: visibleEventsOn,
+    visibleUpcomingGroups: visibleUpcomingGroups,
+    upcomingSummary: upcomingSummary
   }
 }
