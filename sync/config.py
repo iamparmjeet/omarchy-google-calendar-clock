@@ -52,7 +52,7 @@ def _detect_system_timezone() -> str:
                     return str(key)
     except (OSError, ValueError, AttributeError):
         pass
-    return "Asia/Kolkata"
+    return "UTC"
 
 
 DEFAULT_CONFIG = {
@@ -61,7 +61,6 @@ DEFAULT_CONFIG = {
     "futureDays": 60,
     "gwsPath": "/usr/bin/gws",
     "syncIntervalMin": 5,
-    "hiddenCalendars": [],
     "tasklistIds": [],  # empty = all tasklists
 }
 
@@ -101,9 +100,6 @@ def validate_config(cfg: dict) -> list[str]:
     gws = cfg.get("gwsPath")
     if not isinstance(gws, str) or not gws:
         errors.append("gwsPath must be a non-empty string")
-
-    if not isinstance(cfg.get("hiddenCalendars"), list):
-        errors.append("hiddenCalendars must be a list")
 
     if not isinstance(cfg.get("tasklistIds"), list):
         errors.append("tasklistIds must be a list")

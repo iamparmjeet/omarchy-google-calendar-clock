@@ -25,6 +25,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+import uuid
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -40,7 +42,7 @@ from sync.sync import run_sync  # noqa: E402
 
 
 def _tz() -> str:
-    return load_config().get("timezone", "Asia/Kolkata")
+    return load_config().get("timezone", "UTC")
 
 
 def _fail(kind: str, msg: str) -> int:
@@ -125,7 +127,9 @@ def _main(argv: list[str]) -> int:
             if args.meet:
                 body["conferenceData"] = {
                     "createRequest": {
-                        "requestId": f"parm.clock-{args.title}",
+                        # Google requires a unique requestId per request; a
+                        # title-derived id collides on repeated same-title events.
+                        "requestId": f"parm.clock-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}",
                         "conferenceSolutionKey": {"type": "hangoutsMeet"},
                     }
                 }
@@ -174,7 +178,11 @@ def _plus_hour(hhmm: str) -> str:
     try:
         h, m = int(hhmm[:2]), int(hhmm[3:5])
         total = h * 60 + m + 60
-        return f"{total // 60 % 24:02d}:{total % 60:02d}"
+        if total >= 1440:
+            # Crossed midnight: clamp to the last minute of the same day rather
+            # than wrapping to 00:xx, which would put the end before the start.
+            return "23:59"
+        return f"{total // 60:02d}:{total % 60:02d}"
     except (ValueError, IndexError):
         return hhmm
 

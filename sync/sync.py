@@ -70,15 +70,13 @@ def compute_window(cfg: dict, tz_name: str) -> tuple[str, str]:
 
 
 def filter_calendars(calendars: list[dict], cfg: dict) -> list[dict]:
-    hidden = set(cfg.get("hiddenCalendars", []))
-    out = []
-    for cal in calendars:
-        if cal.get("hidden"):
-            continue
-        if cal.get("id") in hidden:
-            continue
-        out.append(cal)
-    return out
+    """Drop calendars Google itself marks hidden.
+
+    The plugin's own ``hiddenCalendars`` UI setting (shell.json) is applied at
+    display time by the panel; it must NOT be applied here, or a hidden
+    calendar vanishes from state.json and can never be re-toggled in settings.
+    """
+    return [cal for cal in calendars if not cal.get("hidden")]
 
 
 def filter_tasklists(tasklists: list[dict], cfg: dict) -> list[dict]:
@@ -359,7 +357,7 @@ def _preserve_or_emit_failure(target: Path, cfg: dict, sync_state: str, message:
         return
     # No good state yet — emit a valid empty document marked with the failure,
     # so the UI still has something schema-valid to render.
-    state = empty_state(cfg.get("timezone", "Asia/Kolkata"), sync_state, message)
+    state = empty_state(cfg.get("timezone") or DEFAULT_CONFIG["timezone"], sync_state, message)
     try:
         atomic_write(target, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
     except OSError:

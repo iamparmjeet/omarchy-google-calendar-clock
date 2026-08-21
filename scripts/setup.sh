@@ -266,7 +266,7 @@ write_config() {
     elif [[ -L /etc/localtime ]]; then
       TIMEZONE="$(readlink -f /etc/localtime | sed 's|^.*/zoneinfo/||')"
     else
-      TIMEZONE="Asia/Kolkata"
+      TIMEZONE="UTC"
     fi
   fi
 
@@ -292,7 +292,6 @@ write_config() {
   "futureDays": 60,
   "gwsPath": "$gws_path",
   "syncIntervalMin": 5,
-  "hiddenCalendars": [],
   "tasklistIds": []
 }
 EOF

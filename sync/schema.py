@@ -162,7 +162,9 @@ def validate_event(ev: Any) -> list[str]:
 
     if "dateKey" in ev:
         dk = ev.get("dateKey")
-        if not isinstance(dk, str) or not DATE_RE.match(dk):
+        # "" means "local day unknown" (unparseable start) — tolerated so one
+        # bad event can't invalidate the whole state document.
+        if not isinstance(dk, str) or (dk != "" and not DATE_RE.match(dk)):
             errors.append("dateKey must be YYYY-MM-DD")
 
     if "recurring" in ev and not isinstance(ev.get("recurring"), bool):
@@ -270,7 +272,7 @@ def normalize_event(raw: dict, calendar_id: str, timezone: str) -> dict:
         "start": start_raw or "",
         "end": end_raw or "",
         "allDay": all_day,
-        "dateKey": dk or start_raw or "",
+        "dateKey": dk,
         "location": raw.get("location") or "",
         "description": raw.get("description") or "",
         "htmlLink": raw.get("htmlLink") or "",
@@ -314,8 +316,12 @@ def normalize_task(raw: dict, list_id: str) -> dict:
     }
 
 
-def empty_state(timezone: str = "Asia/Kolkata", sync_state: str = "never", message: str = "") -> dict:
-    """Return a minimal, valid v1 state document (used before the first sync)."""
+def empty_state(timezone: str = "UTC", sync_state: str = "never", message: str = "") -> dict:
+    """Return a minimal, valid v1 state document (used before the first sync).
+
+    ``timezone`` should be the detected local zone; callers that have one must
+    pass it explicitly (the "UTC" default is only a last resort).
+    """
     return {
         "version": SCHEMA_VERSION,
         "syncedAt": utc_now().isoformat().replace("+00:00", "Z"),

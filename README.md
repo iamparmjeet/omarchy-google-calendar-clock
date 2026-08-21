@@ -181,7 +181,9 @@ Sync-only keys (written by `setup.sh` to `~/.config/parm.clock/config.json`):
 - `pastDays` / `futureDays` — sync window (default 7 / 60)
 - `gwsPath` — absolute path to the `gws` binary
 - `syncIntervalMin` — informational; the timer interval is fixed at 5 min in the unit
-- `hiddenCalendars` / `tasklistIds` — optional filters
+- `tasklistIds` — optional task-list filter (empty = all)
+
+> Calendar visibility is owned solely by the shell.json `hiddenCalendars` setting above — the sync fetches every calendar Google shows, so a hidden calendar can always be re-toggled from the panel's `⚙` settings.
 
 ---
 

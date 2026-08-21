@@ -104,6 +104,17 @@ class TestEventNormalization(unittest.TestCase):
         ev = schema.normalize_event(fx["with_meet"], "primary", "Asia/Kolkata")
         self.assertEqual(ev["meetUrl"], "https://meet.google.com/abc-defg-hij")
 
+    def test_unparseable_start_yields_empty_datekey(self):
+        # A timed event whose dateTime can't be parsed must yield dateKey ""
+        # (never the raw RFC3339 string), so one bad event can't invalidate
+        # the whole state document.
+        raw = {"id": "bad", "summary": "Broken",
+               "start": {"dateTime": "not-a-date"},
+               "end": {"dateTime": "also-bad"}}
+        ev = schema.normalize_event(raw, "primary", "Asia/Kolkata")
+        self.assertEqual(ev["dateKey"], "")
+        self.assertEqual(schema.validate_event(ev), [])
+
 
 class TestTaskNormalization(unittest.TestCase):
     def test_task_due(self):

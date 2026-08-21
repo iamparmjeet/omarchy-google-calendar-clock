@@ -168,6 +168,32 @@ class TestMutate(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(self._method_calls("delete"))
 
+    def test_event_add_late_start_end_clamped_same_day(self):
+        # 23:30 + default 1h would cross midnight; end must clamp to 23:59
+        # rather than wrap to 00:30 (which would precede the start).
+        self._write_state()
+        r = self._run("event-add", "--calendar", "primary", "--title", "Late",
+                      "--date", "2026-08-21", "--start", "23:30")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        inserts = self._method_calls("insert")
+        body = json.loads(inserts[0][inserts[0].index("--json") + 1])
+        self.assertEqual(body["end"]["dateTime"], "2026-08-21T23:59:00")
+
+    def test_event_add_meet_request_id_unique(self):
+        # Google requires a unique requestId per conference createRequest;
+        # two same-title events must not collide.
+        self._write_state()
+        ids = []
+        for _ in range(2):
+            r = self._run("event-add", "--calendar", "primary", "--title", "Standup",
+                          "--date", "2026-08-21", "--start", "09:00", "--meet")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            inserts = self._method_calls("insert")
+            body = json.loads(inserts[-1][inserts[-1].index("--json") + 1])
+            ids.append(body["conferenceData"]["createRequest"]["requestId"])
+        self.assertNotEqual(ids[0], ids[1])
+        self.assertTrue(ids[0].startswith("parm.clock-"))
+
     def test_re_syncs_state_after_write(self):
         self._write_state()
         r = self._run("event-quickadd", "--calendar", "primary", "--text", "X")
