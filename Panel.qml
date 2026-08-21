@@ -935,70 +935,120 @@ Panel {
             Button { iconText: "󰒓"; tooltipText: "Settings"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; selected: root.settingsVisible; onClicked: root.toggleSettings() }
           }
 
-          // ---- New event form — enhanced date/time pickers
+          // ---- New event form — card design, compact Meet switch (no 240px Toggle overflow)
           Column {
             visible: root.editingNewEvent
             width: parent.width
-            spacing: Style.space(6)
+            spacing: Style.space(8)
             PanelSeparator { width: parent.width; foreground: root.contentForeground }
             Text { width: parent.width; text: "NEW EVENT"; color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
-            TextField {
-              id: eventTitleField
+            Rectangle {
               width: parent.width
-              placeholderText: "Title — e.g. Lunch with team"
-              foreground: root.contentForeground
-              font.family: root.contentFontFamily
-              Keys.onPressed: function(event){ if(event.key===Qt.Key_Return||event.key===Qt.Key_Enter) commitNewEventForm(); else if(event.key===Qt.Key_Escape) root.editingNewEvent=false }
-            }
-            Row {
-              width: parent.width
-              spacing: Style.space(8)
-              TextField { id: eventDateField; width: Style.space(130); placeholderText: "YYYY-MM-DD"; text: root.eventDateText; foreground: root.contentForeground; font.family: root.contentFontFamily; onTextChanged: root.eventDateText = text }
-              TextField { id: eventStartField; width: Style.space(90); placeholderText: "HH:MM"; text: root.eventStartText; foreground: root.contentForeground; font.family: root.contentFontFamily; onTextChanged: root.eventStartText = text }
-              TextField { id: eventEndField; width: Style.space(90); placeholderText: "HH:MM"; text: root.eventEndText; foreground: root.contentForeground; font.family: root.contentFontFamily; onTextChanged: root.eventEndText = text }
-              Item { width: Style.space(8); height: 1 }
-              Text { anchors.verticalCenter: parent.verticalCenter; text: "Meet"; color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption }
-              Toggle { checked: root.eventMeet; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.eventMeet = !root.eventMeet }
-            }
-            TextField {
-              id: eventLocationField
-              width: parent.width
-              placeholderText: "Location (optional)"
-              foreground: root.contentForeground
-              font.family: root.contentFontFamily
-              onTextChanged: root.eventLocationText = text
-            }
-            Row {
-              width: parent.width; spacing: Style.space(8)
-              Button { text: "Add"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: commitNewEventForm() }
-              Button { text: "Cancel"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.editingNewEvent = false }
-              Item { width: Style.space(12); height: 1 }
-              Text { visible: root.mutateOutput !== ""; anchors.verticalCenter: parent.verticalCenter; text: root.mutateOutput; color: Color.urgent; font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; width: Math.max(0, parent.width - 120) }
+              radius: Style.cornerRadius + 4
+              color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.04)
+              border.width: Style.spacing.hairline; border.color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10)
+              height: eventCardCol.implicitHeight + Style.space(16)
+              Column {
+                id: eventCardCol
+                width: parent.width - Style.space(16)
+                x: Style.space(8); y: Style.space(8)
+                spacing: Style.space(8)
+                TextField {
+                  id: eventTitleField
+                  width: parent.width
+                  placeholderText: "Title — e.g. Lunch with team"
+                  foreground: root.contentForeground
+                  font.family: root.contentFontFamily
+                  Keys.onPressed: function(event){ if(event.key===Qt.Key_Return||event.key===Qt.Key_Enter) commitNewEventForm(); else if(event.key===Qt.Key_Escape) root.editingNewEvent=false }
+                }
+                Item {
+                  width: parent.width
+                  height: Math.max(eventDateField.implicitHeight, meetRow.implicitHeight)
+                  Row {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(6)
+                    TextField { id: eventDateField; width: Style.space(118); placeholderText: "YYYY-MM-DD"; text: root.eventDateText; foreground: root.contentForeground; font.family: root.contentFontFamily; onTextChanged: root.eventDateText = text }
+                    TextField { id: eventStartField; width: Style.space(74); placeholderText: "HH:MM"; text: root.eventStartText; foreground: root.contentForeground; font.family: root.contentFontFamily; onTextChanged: root.eventStartText = text }
+                    TextField { id: eventEndField; width: Style.space(74); placeholderText: "HH:MM"; text: root.eventEndText; foreground: root.contentForeground; font.family: root.contentFontFamily; onTextChanged: root.eventEndText = text }
+                  }
+                  Row {
+                    id: meetRow
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(6)
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Meet"; color: root.eventMeet ? root.contentForeground : Qt.darker(root.contentForeground,1.5); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.bold: root.eventMeet }
+                    ToggleSwitch { checked: root.eventMeet; foreground: root.contentForeground; trackHeight: Style.space(16); trackWidth: Math.round(Style.space(16)*1.85); onToggled: root.eventMeet = !root.eventMeet }
+                  }
+                }
+                TextField {
+                  id: eventLocationField
+                  width: parent.width
+                  placeholderText: "Location (optional)"
+                  foreground: root.contentForeground
+                  font.family: root.contentFontFamily
+                  onTextChanged: root.eventLocationText = text
+                }
+                Row {
+                  width: parent.width; spacing: Style.space(8)
+                  Button { text: "Add"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: commitNewEventForm() }
+                  Button { text: "Cancel"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.editingNewEvent = false }
+                  Text { visible: root.mutateOutput !== ""; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - Style.space(140)); text: root.mutateOutput; color: Color.urgent; font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; elide: Text.ElideRight }
+                }
+              }
             }
           }
 
-          // ---- New task form
+          // ---- New task form — card, no overflow (flex title + fixed due + actions)
           Column {
             visible: root.editingNewTask
             width: parent.width
-            spacing: Style.space(6)
+            spacing: Style.space(8)
             PanelSeparator { width: parent.width; foreground: root.contentForeground }
             Text { width: parent.width; text: "NEW TASK  [ ]"; color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
-            Row {
+            Rectangle {
               width: parent.width
-              spacing: Style.space(8)
-              TextField {
-                id: taskTitleField
-                width: parent.width - taskDueField.width - taskAddButton.implicitWidth - Style.space(16)
-                placeholderText: "New task"
-                foreground: root.contentForeground
-                font.family: root.contentFontFamily
-                Keys.onPressed: function(event){ if(event.key===Qt.Key_Return||event.key===Qt.Key_Enter) root.commitNewTask(); else if(event.key===Qt.Key_Escape) root.editingNewTask=false }
+              radius: Style.cornerRadius + 4
+              color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.04)
+              border.width: Style.spacing.hairline; border.color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10)
+              height: taskCardCol.implicitHeight + Style.space(16)
+              Column {
+                id: taskCardCol
+                width: parent.width - Style.space(16)
+                x: Style.space(8); y: Style.space(8)
+                spacing: Style.space(8)
+                TextField {
+                  id: taskTitleField
+                  width: parent.width
+                  placeholderText: "What needs doing?  [ ]"
+                  foreground: root.contentForeground
+                  font.family: root.contentFontFamily
+                  Keys.onPressed: function(event){ if(event.key===Qt.Key_Return||event.key===Qt.Key_Enter) root.commitNewTask(); else if(event.key===Qt.Key_Escape) root.editingNewTask=false }
+                }
+                Item {
+                  width: parent.width
+                  height: Math.max(taskDueField.implicitHeight, taskAddButton.implicitHeight)
+                  TextField {
+                    id: taskDueField
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Style.space(128)
+                    placeholderText: "due  YYYY-MM-DD"
+                    foreground: root.contentForeground
+                    font.family: root.contentFontFamily
+                    Keys.onPressed: function(event){ if(event.key===Qt.Key_Return||event.key===Qt.Key_Enter) root.commitNewTask(); else if(event.key===Qt.Key_Escape) root.editingNewTask=false }
+                  }
+                  Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(6)
+                    Button { text: "Cancel"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.editingNewTask = false }
+                    Button { id: taskAddButton; text: "Add"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.commitNewTask() }
+                  }
+                }
+                Text { visible: root.mutateOutput !== ""; width: parent.width; text: root.mutateOutput; color: Color.urgent; font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; elide: Text.ElideRight }
               }
-              TextField { id: taskDueField; width: Style.space(120); placeholderText: "due YYYY-MM-DD"; foreground: root.contentForeground; font.family: root.contentFontFamily; Keys.onPressed: function(event){ if(event.key===Qt.Key_Return||event.key===Qt.Key_Enter) root.commitNewTask(); else if(event.key===Qt.Key_Escape) root.editingNewTask=false } }
-              Button { id: taskAddButton; text: "Add"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.commitNewTask() }
             }
-            Text { visible: root.mutateOutput !== ""; width: parent.width; text: root.mutateOutput; color: Color.urgent; font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap }
           }
 
           // ---- Settings
