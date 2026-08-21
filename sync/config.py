@@ -20,8 +20,43 @@ from typing import Any, Optional
 
 from .schema import SYNC_STATES  # noqa: F401  (re-export convenience)
 
+def _detect_system_timezone() -> str:
+    """Best-effort detection of the host's IANA timezone.
+
+    Mirrors the logic in scripts/setup.sh so a user who installs via
+    the marketplace but never runs setup.sh still gets a correct local
+    timezone instead of a hardcoded fallback.
+    """
+    try:
+        tz_path = Path("/etc/timezone")
+        if tz_path.is_file():
+            text = tz_path.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+    except (OSError, ValueError):
+        pass
+    try:
+        localtime = Path("/etc/localtime")
+        if localtime.is_symlink():
+            target = str(localtime.resolve())
+            if "/zoneinfo/" in target:
+                return target.split("/zoneinfo/", 1)[1]
+        elif localtime.exists():
+            # Fallback: ask the system via datetime
+            from datetime import datetime as _dt
+
+            tzname = _dt.now().astimezone().tzinfo
+            if tzname is not None:
+                key = getattr(tzname, "key", None)
+                if key:
+                    return str(key)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return "Asia/Kolkata"
+
+
 DEFAULT_CONFIG = {
-    "timezone": "Asia/Kolkata",
+    "timezone": _detect_system_timezone(),
     "pastDays": 7,
     "futureDays": 60,
     "gwsPath": "/usr/bin/gws",
@@ -37,7 +72,7 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 def load_config(path: Optional[Path] = None) -> dict:
     """Load the sync config, merged over defaults. Never raises.
 
-    A missing or malformed file returns the defaults.
+    A missing or malformed file returns the defaults (with auto-detected timezone).
     """
     cfg = dict(DEFAULT_CONFIG)
     target = Path(path) if path else CONFIG_PATH

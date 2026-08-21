@@ -210,7 +210,7 @@ def run_sync(
         _preserve_or_emit_failure(target, cfg, "error", "; ".join(config_errors))
         return 4
 
-    timezone = cfg.get("timezone", "Asia/Kolkata")
+    timezone = cfg.get("timezone") or DEFAULT_CONFIG["timezone"]
 
     # Locate gws.
     try:
