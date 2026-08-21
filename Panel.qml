@@ -465,85 +465,90 @@ Panel {
               width: parent.width
               spacing: Style.space(6)
 
-              // Month grid
+              // Month grid — unified min-height + breathing room, scrolls via outer Flickable if exceeds
               Item {
                 visible: root.viewMode === "month"
                 width: parent.width
-                height: visible ? monthGridWrap.height : 0
-                Item {
-                  id: monthGridWrap
-                  width: gridColumn.width
-                  height: gridColumn.y + gridColumn.height
-                  anchors.horizontalCenter: parent.horizontalCenter
-                  WheelHandler { onWheel: function(event){ if(event.angleDelta.y===0) return; root.moveMonth(event.angleDelta.y>0 ? -1:1) } }
-                  Column {
-                    id: gridColumn
-                    y: Style.space(10)
+                height: visible ? Math.max(Style.space(360), monthCol.implicitHeight) : 0
+                Column {
+                  id: monthCol
+                  width: parent.width
+                  spacing: Style.space(8)
+                  Item {
+                    id: monthGridWrap
+                    width: gridColumn.width
+                    height: gridColumn.y + gridColumn.height
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: Style.space(3)
-                    Row {
-                      id: headerRow
-                      spacing: root.cellSpacing
-                      Rectangle {
-                        width: root.weekColumnWidth; height: Style.space(16); radius: Style.cornerRadius
-                        color: weekStartMouse.containsMouse ? Style.hoverFillFor(root.contentForeground, Color.accent) : "transparent"
-                        Text { anchors.centerIn: parent; text: "W"; color: weekStartMouse.containsMouse ? Style.hoverStateColor(root.contentForeground, Color.accent) : Qt.darker(root.contentForeground,1.9); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
-                        MouseArea { id: weekStartMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleWeekStart() }
-                        PanelToolTip { visible: weekStartMouse.containsMouse; text: "Start weeks on " + root.nextWeekStartLabel; fontFamily: root.contentFontFamily }
-                      }
-                      Item { width: root.gutterWidth; height: Style.space(16) }
-                      Repeater {
-                        model: root.weekdays
-                        Text { required property var modelData; width: root.cellWidth; height: Style.space(16); horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: root.weekdayLabel(modelData); color: Qt.darker(root.contentForeground,1.5); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
-                      }
-                    }
-                    Repeater {
-                      model: root.weeks
+                    WheelHandler { onWheel: function(event){ if(event.angleDelta.y===0) return; root.moveMonth(event.angleDelta.y>0 ? -1:1) } }
+                    Column {
+                      id: gridColumn
+                      y: Style.space(10)
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      spacing: Style.space(3)
                       Row {
-                        required property var modelData
+                        id: headerRow
                         spacing: root.cellSpacing
-                        Text { width: root.weekColumnWidth; height: root.cellHeight; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: modelData.week; color: Qt.darker(root.contentForeground,1.9); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption }
-                        Item { width: root.gutterWidth; height: root.cellHeight }
+                        Rectangle {
+                          width: root.weekColumnWidth; height: Style.space(16); radius: Style.cornerRadius
+                          color: weekStartMouse.containsMouse ? Style.hoverFillFor(root.contentForeground, Color.accent) : "transparent"
+                          Text { anchors.centerIn: parent; text: "W"; color: weekStartMouse.containsMouse ? Style.hoverStateColor(root.contentForeground, Color.accent) : Qt.darker(root.contentForeground,1.9); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
+                          MouseArea { id: weekStartMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.toggleWeekStart() }
+                          PanelToolTip { visible: weekStartMouse.containsMouse; text: "Start weeks on " + root.nextWeekStartLabel; fontFamily: root.contentFontFamily }
+                        }
+                        Item { width: root.gutterWidth; height: Style.space(16) }
                         Repeater {
-                          model: modelData.days
-                          Rectangle {
-                            required property var modelData
-                            readonly property bool isSelected: modelData.key === root.selectedKey
-                            readonly property var cellEvents: root.visibleEventsOn(modelData.key)
-                            width: root.cellWidth; height: root.cellHeight; radius: Style.cornerRadius
-                            color: isSelected && !modelData.today ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.08) : "transparent"
-                            border.width: modelData.today ? Style.spacing.hairline : 0
-                            border.color: Style.normalBorderFor(root.contentForeground, Color.accent)
-                            Text { anchors.centerIn: parent; text: modelData.day; color: modelData.inMonth ? (modelData.weekend ? Qt.darker(root.contentForeground,1.45) : root.contentForeground) : Qt.darker(root.contentForeground,2.2); font.family: root.contentFontFamily; font.pixelSize: Style.font.body; font.bold: modelData.today }
-                            Row {
-                              anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(4); spacing: Style.space(3)
-                              Repeater { model: cellEvents.slice(0,4); Rectangle { required property var modelData; width: Style.space(5); height: Style.space(5); radius: width/2; color: root.dotColor(modelData) } }
+                          model: root.weekdays
+                          Text { required property var modelData; width: root.cellWidth; height: Style.space(16); horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: root.weekdayLabel(modelData); color: Qt.darker(root.contentForeground,1.5); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
+                        }
+                      }
+                      Repeater {
+                        model: root.weeks
+                        Row {
+                          required property var modelData
+                          spacing: root.cellSpacing
+                          Text { width: root.weekColumnWidth; height: root.cellHeight; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: modelData.week; color: Qt.darker(root.contentForeground,1.9); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption }
+                          Item { width: root.gutterWidth; height: root.cellHeight }
+                          Repeater {
+                            model: modelData.days
+                            Rectangle {
+                              required property var modelData
+                              readonly property bool isSelected: modelData.key === root.selectedKey
+                              readonly property var cellEvents: root.visibleEventsOn(modelData.key)
+                              width: root.cellWidth; height: root.cellHeight; radius: Style.cornerRadius
+                              color: isSelected && !modelData.today ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.08) : "transparent"
+                              border.width: modelData.today ? Style.spacing.hairline : 0
+                              border.color: Style.normalBorderFor(root.contentForeground, Color.accent)
+                              Text { anchors.centerIn: parent; text: modelData.day; color: modelData.inMonth ? (modelData.weekend ? Qt.darker(root.contentForeground,1.45) : root.contentForeground) : Qt.darker(root.contentForeground,2.2); font.family: root.contentFontFamily; font.pixelSize: Style.font.body; font.bold: modelData.today }
+                              Row {
+                                anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(4); spacing: Style.space(3)
+                                Repeater { model: cellEvents.slice(0,4); Rectangle { required property var modelData; width: Style.space(5); height: Style.space(5); radius: width/2; color: root.dotColor(modelData) } }
+                              }
+                              MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectDay(modelData.key) }
                             }
-                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectDay(modelData.key) }
                           }
                         }
                       }
                     }
+                    Rectangle { x: gridColumn.x + root.weekColumnWidth + root.cellSpacing + Math.round((root.gutterWidth - width)/2); y: gridColumn.y + headerRow.height + gridColumn.spacing; width: Style.spacing.hairline; height: gridColumn.height - headerRow.height - gridColumn.spacing; color: root.contentForeground; opacity: 0.1 }
                   }
-                  Rectangle { x: gridColumn.x + root.weekColumnWidth + root.cellSpacing + Math.round((root.gutterWidth - width)/2); y: gridColumn.y + headerRow.height + gridColumn.spacing; width: Style.spacing.hairline; height: gridColumn.height - headerRow.height - gridColumn.spacing; color: root.contentForeground; opacity: 0.1 }
-                }
-                // Month stepping under grid
-                Item {
-                  width: parent.width; height: monthNav.height + Style.space(6)
+                  // Month stepping under grid
                   Item {
-                    id: monthNav; anchors.horizontalCenter: parent.horizontalCenter; y: Style.space(6); width: gridColumn.width; height: monthLabel.implicitHeight + Style.space(8)
-                    Text { id: monthLabel; anchors.horizontalCenter: parent.horizontalCenter; anchors.verticalCenter: parent.verticalCenter; width: Style.space(150); horizontalAlignment: Text.AlignHCenter; text: Qt.formatDate(root.viewDate, "MMMM yyyy").toUpperCase(); color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.body; font.letterSpacing: 1 }
-                    PanelActionButton { anchors.left: parent.left; anchors.leftMargin: -Style.space(8); anchors.verticalCenter: parent.verticalCenter; iconText: "󰅁"; tooltipText: "Previous month"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.moveMonth(-1) }
-                    PanelActionButton { anchors.right: parent.right; anchors.rightMargin: -Style.space(8); anchors.verticalCenter: parent.verticalCenter; iconText: "󰅂"; tooltipText: "Next month"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.moveMonth(1) }
+                    width: parent.width; height: monthNav.height + Style.space(6)
+                    Item {
+                      id: monthNav; anchors.horizontalCenter: parent.horizontalCenter; y: Style.space(6); width: gridColumn.width; height: monthLabel.implicitHeight + Style.space(8)
+                      Text { id: monthLabel; anchors.horizontalCenter: parent.horizontalCenter; anchors.verticalCenter: parent.verticalCenter; width: Style.space(150); horizontalAlignment: Text.AlignHCenter; text: Qt.formatDate(root.viewDate, "MMMM yyyy").toUpperCase(); color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.body; font.letterSpacing: 1 }
+                      PanelActionButton { anchors.left: parent.left; anchors.leftMargin: -Style.space(8); anchors.verticalCenter: parent.verticalCenter; iconText: "󰅁"; tooltipText: "Previous month"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.moveMonth(-1) }
+                      PanelActionButton { anchors.right: parent.right; anchors.rightMargin: -Style.space(8); anchors.verticalCenter: parent.verticalCenter; iconText: "󰅂"; tooltipText: "Next month"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.moveMonth(1) }
+                    }
                   }
                 }
               }
 
-              // Week view — redesigned: pill header + balanced 7 cards with subtle weekend tint + chips
+              // Week view — vertical stack, unified min-height
               Item {
                 visible: root.viewMode === "week"
                 width: parent.width
-                height: Math.max(Style.space(300), weekCol.implicitHeight)
+                height: Math.max(Style.space(360), weekCol.implicitHeight)
                 Column {
                   id: weekCol
                   width: parent.width
@@ -674,11 +679,11 @@ Panel {
                 }
               }
 
-              // Upcoming — next 14 days grouped — min-height keeps panel stable
+              // Upcoming — next 14 days grouped — unified min-height
               Item {
                 visible: root.viewMode === "upcoming"
                 width: parent.width
-                height: Math.max(Style.space(280), upcomingCol.implicitHeight)
+                height: Math.max(Style.space(360), upcomingCol.implicitHeight)
                 Column {
                   id: upcomingCol
                   width: parent.width
@@ -714,11 +719,11 @@ Panel {
                 }
               }
 
-              // Tasks — min-height anchored to month grid (~280) so 0/1 task doesn't collapse the panel
+              // Tasks — unified min-height, grows + outer Flickable scrolls if many tasks exceed
               Item {
                 visible: root.viewMode === "tasks"
                 width: parent.width
-                height: Math.max(Style.space(280), tasksCol.implicitHeight)
+                height: Math.max(Style.space(360), tasksCol.implicitHeight)
                 Column {
                   id: tasksCol
                   width: parent.width
