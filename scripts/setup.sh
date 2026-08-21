@@ -108,7 +108,7 @@ install_correct_gws() {
   info "  This is NOT the pacman package 'gws' (git-workspace helper)."
   info "  Source: https://github.com/googleworkspace/cli"
   if $DRY_RUN; then
-    echo "   would run: npm install -g @googleworkspace/cli  (or cargo/installer.sh fallback)"
+    echo "   would run: npm install -g @googleworkspace/cli  (or cargo fallback)"
     return 0
   fi
   # Remove wrong pacman gws if present
@@ -128,27 +128,17 @@ install_correct_gws() {
       warn "npm install failed (check network/npm PATH) — trying fallback."
     fi
   else
-    warn "npm not found — trying installer script / cargo."
+    warn "npm not found — trying cargo."
   fi
-  # Try cargo
+  # Try cargo (pinned to v0.22.5 for reproducible marketplace review)
   if command_exists cargo; then
-    info "Trying: cargo install --git https://github.com/googleworkspace/cli --locked"
-    if cargo install --git https://github.com/googleworkspace/cli --locked; then
+    info "Trying: cargo install --git https://github.com/googleworkspace/cli --rev 705fb0ecac6f4249679958f6325b809b63fdde17 --locked  (v0.22.5)"
+    if cargo install --git https://github.com/googleworkspace/cli --rev 705fb0ecac6f4249679958f6325b809b63fdde17 --locked; then
       hash -r 2>/dev/null || true
       if is_correct_gws; then ok "gws installed via cargo."; return 0; fi
     fi
   fi
-  # Try installer script (uses versioned URL, try latest known)
-  info "Trying: installer script from github releases"
-  if command_exists curl; then
-    # Use the generic installer if available (v0.22.5)
-    if curl --proto '=https' --tlsv1.2 -LsSf https://github.com/googleworkspace/cli/releases/download/v0.22.5/google-workspace-cli-installer.sh | sh; then
-      hash -r 2>/dev/null || true
-      # Installer puts binary in ~/.cargo/bin or /usr/local/bin
-      if is_correct_gws; then ok "gws installed via installer.sh."; return 0; fi
-    fi
-  fi
-  die "gws install failed. Install manually: npm install -g @googleworkspace/cli  OR  cargo install --git https://github.com/googleworkspace/cli --locked  OR  download from https://github.com/googleworkspace/cli/releases  and ensure 'gws auth --help' works, then re-run."
+  die "gws install failed. Install manually: npm install -g @googleworkspace/cli  OR  cargo install --git https://github.com/googleworkspace/cli --rev 705fb0ecac6f4249679958f6325b809b63fdde17 --locked  OR  download from https://github.com/googleworkspace/cli/releases/tag/v0.22.5  and ensure 'gws auth --help' works, then re-run."
 }
 
 # ----------------------------------------------------------------- step 1: deps
