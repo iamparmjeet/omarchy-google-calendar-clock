@@ -626,19 +626,40 @@ Panel {
                 visible: root.viewMode === "tasks"
                 width: parent.width
                 spacing: Style.space(6)
-                Row {
-                  width: parent.width; spacing: Style.space(8)
-                  Text { anchors.verticalCenter: parent.verticalCenter; text: "TASKS"; color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
-                  Item { width: Style.space(8); height: 1 }
-                  Text { anchors.verticalCenter: parent.verticalCenter; text: "[ ] open  [x] closed"; color: Qt.darker(root.contentForeground,1.6); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption }
-                  Item { width: Math.max(0, parent.width - 260); height: 1 }
-                  Toggle {
-                    width: Style.space(140)
-                    label: root.showCompletedTasks ? "Show closed" : "Hide closed"
-                    checked: root.showCompletedTasks
-                    foreground: root.contentForeground
-                    fontFamily: root.contentFontFamily
-                    onClicked: root.toggleShowCompleted()
+                // Creative compact header — legend + tiny pill switch (ToggleSwitch, not the 54px settings Toggle)
+                Item {
+                  width: parent.width
+                  height: Style.space(22)
+                  Row {
+                    id: tasksHeaderLeft
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(10)
+                    Text { text: "TASKS"; color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
+                    Rectangle { width: Style.spacing.hairline; height: Style.space(10); color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.18); anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "[ ] open  ·  [×] closed"; color: Qt.darker(root.contentForeground,1.7); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 0.4 }
+                  }
+                  Row {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(7)
+                    Text {
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: "closed"
+                      color: root.showCompletedTasks ? root.contentForeground : Qt.darker(root.contentForeground,1.6)
+                      font.family: root.contentFontFamily
+                      font.pixelSize: Style.font.caption
+                      font.letterSpacing: 0.6
+                    }
+                    ToggleSwitch {
+                      id: showClosedToggle
+                      anchors.verticalCenter: parent.verticalCenter
+                      checked: root.showCompletedTasks
+                      foreground: root.contentForeground
+                      trackHeight: Style.space(16)
+                      trackWidth: Math.round(Style.space(16) * 1.85)
+                      onToggled: root.toggleShowCompleted()
+                    }
                   }
                 }
                 Repeater {
