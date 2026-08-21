@@ -314,6 +314,13 @@ function testVisibleUpcomingGroupsAndSummary() {
   );
 }
 
+function testNextHalfHour() {
+  assert.strictEqual(Model.nextHalfHourHHMM(new Date(2026, 7, 20, 10, 15)), "10:30");
+  assert.strictEqual(Model.nextHalfHourHHMM(new Date(2026, 7, 20, 10, 45)), "11:00");
+  assert.strictEqual(Model.nextHalfHourHHMM(new Date(2026, 7, 20, 10, 0)), "10:30");
+  assert.strictEqual(Model.nextHalfHourHHMM(new Date(2026, 7, 20, 23, 50)), "00:00");
+}
+
 const tests = [
   testEventIndex,
   testEventsForDateAllDayFirst,
@@ -346,6 +353,7 @@ const tests = [
   testStartTimeTextAndEventTimeRange,
   testStepWeek,
   testWeekHeadingParts,
+  testNextHalfHour,
   testVisibleEventsOn,
   testVisibleUpcomingGroupsAndSummary,
 ];

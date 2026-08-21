@@ -669,6 +669,15 @@ function weekHeadingParts(weekKeys) {
   }
 }
 
+// The next half-hour boundary after `date` as "HH:MM", with hour rollover.
+// (10:15 -> "10:30", 10:45 -> "11:00", 10:00 -> "10:30".)
+function nextHalfHourHHMM(date) {
+  var h = date.getHours()
+  var m = date.getMinutes()
+  if (m <= 30) return pad2(h) + ":30"
+  return pad2((h + 1) % 24) + ":00"
+}
+
 // eventsForDate with calendars hidden via shell.json applied.
 function visibleEventsOn(index, dateKey, hiddenCalendars) {
   var hidden = hiddenCalendars || []
@@ -757,6 +766,7 @@ if (typeof module !== "undefined") {
     eventTimeRange: eventTimeRange,
     stepWeek: stepWeek,
     weekHeadingParts: weekHeadingParts,
+    nextHalfHourHHMM: nextHalfHourHHMM,
     visibleEventsOn: visibleEventsOn,
     visibleUpcomingGroups: visibleUpcomingGroups,
     upcomingSummary: upcomingSummary
