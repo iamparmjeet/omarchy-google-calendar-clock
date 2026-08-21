@@ -9,12 +9,20 @@
 # re-run of setup.sh brings everything back.
 #
 # Options:
-#   --purge-data    also delete ~/.local/state/parm.clock (cached state.json)
-#   --purge-plugin  also run `omarchy plugin remove parm.clock`
-#   --purge-config  also remove the parm.clock entry from shell.json
-#   --dry-run       print what would happen without doing it
+#   --purge-data         also delete ~/.local/state/parm.clock (cached state.json)
+#   --purge-plugin       also run `omarchy plugin remove parm.clock`
+#   --purge-config       also remove the parm.clock entry from shell.json
+#   --purge-credentials  also delete local OAuth credentials (~/.config/gws,
+#                        gcloud auth revoke). Requires re-auth on next setup.
+#                        Online revoke still needs myaccount.google.com/permissions.
+#   --purge-packages     also remove installed packages (google-cloud-cli via
+#                        pacman, @googleworkspace/cli via npm). Needs sudo.
+#   --purge-all          shorthand for --purge-data --purge-plugin --purge-config
+#                        --purge-credentials --purge-packages (full reset)
+#   --dry-run            print what would happen without doing it
+#   --yes                auto-approve package/credential removal (skip [Y/n])
 #
-# Usage: ./uninstall.sh [--purge-data] [--purge-plugin] [--purge-config] [--dry-run]
+# Usage: ./uninstall.sh [--purge-data] [--purge-plugin] [--purge-config] [--purge-credentials] [--purge-packages] [--purge-all] [--dry-run] [--yes]
 
 set -euo pipefail
 
@@ -22,20 +30,29 @@ SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/parm.clock"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/parm.clock"
 SHELL_JSON="$HOME/.config/omarchy/shell.json"
+GWS_DIR="$HOME/.config/gws"
+GCLOUD_DIR="$HOME/.config/gcloud"
 
 PURGE_DATA=false
 PURGE_PLUGIN=false
 PURGE_CONFIG=false
+PURGE_CREDENTIALS=false
+PURGE_PACKAGES=false
 DRY_RUN=false
+AUTO_YES=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --purge-data) PURGE_DATA=true; shift ;;
     --purge-plugin) PURGE_PLUGIN=true; shift ;;
     --purge-config) PURGE_CONFIG=true; shift ;;
+    --purge-credentials) PURGE_CREDENTIALS=true; shift ;;
+    --purge-packages) PURGE_PACKAGES=true; shift ;;
+    --purge-all) PURGE_DATA=true; PURGE_PLUGIN=true; PURGE_CONFIG=true; PURGE_CREDENTIALS=true; PURGE_PACKAGES=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --yes|-y) AUTO_YES=true; shift ;;
     -h | --help)
-      sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -55,6 +72,19 @@ run() {
   else
     "$@"
   fi
+}
+
+ask() {
+  local prompt="$1"
+  if $AUTO_YES || $DRY_RUN; then
+    if $DRY_RUN; then echo "   would ask: $prompt [Y/n] -> Y (dry-run)"; fi
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then return 0; fi
+  local ans
+  read -r -p "$prompt [Y/n] " ans </dev/tty || return 0
+  ans="${ans:-Y}"
+  [[ "$ans" =~ ^[Yy] ]] || [[ "$ans" == "" ]]
 }
 
 main() {
@@ -108,8 +138,89 @@ main() {
     fi
   fi
 
+  if $PURGE_CREDENTIALS; then
+    info "Purging local OAuth credentials…"
+    # gws credentials (googleworkspace/cli) — owns Calendar/Tasks OAuth
+    if [[ -d "$GWS_DIR" ]]; then
+      if ask "Delete $GWS_DIR (gws client_secret + token cache)?"; then
+        # Try graceful logout first (revokes local token, keeps client_secret for reuse)
+        if command -v gws >/dev/null 2>&1; then
+          run gws auth logout 2>/dev/null || true
+        fi
+        run rm -rf "$GWS_DIR"
+        ok "removed $GWS_DIR"
+      else
+        info "kept $GWS_DIR"
+      fi
+    else
+      info "no gws credentials at $GWS_DIR"
+    fi
+    # gcloud credentials — optional, only if gcloud is present
+    if [[ -d "$GCLOUD_DIR" ]]; then
+      if ask "Also revoke gcloud auth (gcloud auth revoke --all) and delete $GCLOUD_DIR?"; then
+        if command -v gcloud >/dev/null 2>&1; then
+          run gcloud auth revoke --all 2>/dev/null || true
+        fi
+        # Keep GCLOUD_DIR by default; only delete if user confirms second prompt
+        info "gcloud config kept at $GCLOUD_DIR (remove manually with rm -rf $GCLOUD_DIR if needed)"
+      fi
+    fi
+    warn "Online revoke still required: https://myaccount.google.com/permissions → remove 'gws CLI' / 'omarchy-clock' to force fresh consent."
+    warn "If OAuth client was in Testing mode, also remove test user at https://console.cloud.google.com/apis/credentials/consent"
+  else
+    info "credentials kept (re-run with --purge-credentials to delete ~/.config/gws)."
+  fi
+
+  if $PURGE_PACKAGES; then
+    info "Purging installed packages (needs confirmation)…"
+    # google-cloud-cli via pacman
+    if pacman -Q google-cloud-cli 2>/dev/null >/dev/null; then
+      if ask "Remove google-cloud-cli (~313 MiB) via pacman (needs sudo)?"; then
+        run sudo pacman -Rns --noconfirm google-cloud-cli || warn "pacman remove failed"
+        ok "removed google-cloud-cli"
+      else
+        info "kept google-cloud-cli"
+      fi
+    else
+      info "google-cloud-cli not installed"
+    fi
+    # wrong gws (StreakyCobra) via pacman
+    if pacman -Q gws 2>/dev/null | grep -q "Colorful KISS helper"; then
+      if ask "Remove wrong pacman package 'gws' (StreakyCobra/git-workspace)?"; then
+        run sudo pacman -Rns --noconfirm gws || true
+        ok "removed pacman gws"
+      fi
+    fi
+    # correct gws via npm
+    if npm list -g @googleworkspace/cli 2>/dev/null | grep -q "@googleworkspace/cli"; then
+      if ask "Remove correct gws via npm (npm uninstall -g @googleworkspace/cli)?"; then
+        run npm uninstall -g @googleworkspace/cli || warn "npm uninstall failed"
+        run hash -r 2>/dev/null || true
+        ok "removed @googleworkspace/cli"
+      else
+        info "kept @googleworkspace/cli"
+      fi
+    else
+      info "@googleworkspace/cli not installed via npm"
+    fi
+    # cargo install fallback
+    if command -v gws >/dev/null 2>&1 && [[ -x "$HOME/.cargo/bin/gws" ]]; then
+      if ask "Remove cargo-installed gws (~/.cargo/bin/gws)?"; then
+        run rm -f "$HOME/.cargo/bin/gws" || true
+        ok "removed ~/.cargo/bin/gws"
+      fi
+    fi
+  else
+    info "packages kept (re-run with --purge-packages to remove google-cloud-cli + gws)."
+  fi
+
   echo
   ok "parm.clock uninstalled. Google data (events/tasks) was never touched."
+  if $PURGE_CREDENTIALS || $PURGE_PACKAGES; then
+    info "Fresh start: re-install deps then re-auth:"
+    echo "     omarchy plugin add https://github.com/iamparmjeet/omarchy-google-calendar-clock.git --enable"
+    echo "     ~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --yes"
+  fi
 }
 
 main "$@"

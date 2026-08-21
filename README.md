@@ -214,10 +214,17 @@ Remove the systemd units, config, and cached state (keeps your Google data and t
 Options:
 
 ```bash
-uninstall.sh --purge-data      # also delete ~/.local/state/parm.clock
-uninstall.sh --purge-plugin    # also `omarchy plugin remove parm.clock`
-uninstall.sh --purge-config    # also remove the parm.clock entry from shell.json
-uninstall.sh --dry-run
+uninstall.sh --purge-data         # also delete ~/.local/state/parm.clock (cached state.json)
+uninstall.sh --purge-plugin       # also `omarchy plugin remove parm.clock`
+uninstall.sh --purge-config       # also remove the parm.clock entry from shell.json
+uninstall.sh --purge-credentials  # also delete local OAuth (~/.config/gws + gws auth logout)
+                                  # online revoke still needed: myaccount.google.com/permissions
+uninstall.sh --purge-packages     # also remove packages (google-cloud-cli via pacman,
+                                  # @googleworkspace/cli via npm, cargo gws)
+uninstall.sh --purge-all          # shorthand for --purge-data --purge-plugin --purge-config
+                                  # --purge-credentials --purge-packages (full reset)
+uninstall.sh --dry-run            # preview without executing
+uninstall.sh --yes                # auto-approve [Y/n] prompts (for --purge-credentials/packages)
 ```
 
 Or remove just the plugin with the shell:
@@ -227,6 +234,27 @@ omarchy plugin remove parm.clock
 ```
 
 Your events and tasks always live server-side on Google — uninstalling never deletes them.
+
+### Full reset (start afresh like first install)
+
+To revoke everything locally and force a fresh consent + fresh `config.json` (what you need after `gcloud`/`gws` were removed):
+
+```bash
+# 1. purge everything locally (add --dry-run first to preview)
+~/.config/omarchy/plugins/parm.clock/scripts/uninstall.sh --purge-all --dry-run
+~/.config/omarchy/plugins/parm.clock/scripts/uninstall.sh --purge-all
+
+# 2. revoke online (required for fresh consent screen)
+#    https://myaccount.google.com/permissions → remove 'gws CLI' / 'omarchy-clock'
+#    Optional: gcloud projects delete omarchy-clock  or remove OAuth test user
+
+# 3. reinstall like a new user (prompts show env + package sizes, respects --yes)
+omarchy plugin add https://github.com/iamparmjeet/omarchy-google-calendar-clock.git --enable
+~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --yes
+~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --dry-run  # preview without side-effects
+```
+
+`setup.sh` now prompts before installing dependencies and shows the right env (`node`, `npm`, `cargo`, `pacman`, `PATH`); it correctly installs **googleworkspace/cli** via `npm install -g @googleworkspace/cli` (not the wrong pacman `gws` git-workspace helper) and skips `gws auth setup` when already authenticated.
 
 ---
 
