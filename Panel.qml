@@ -465,11 +465,11 @@ Panel {
               width: parent.width
               spacing: Style.space(6)
 
-              // Month grid — tightened: small min to keep calendar close to nav/pills (extra space moved after events)
+              // Month grid — tight: no extra 77, nav→pills gap minimal, breathing moved after events
               Item {
                 visible: root.viewMode === "month"
                 width: parent.width
-                height: visible ? Math.max(Style.space(290), monthCol.implicitHeight) : 0
+                height: visible ? Math.max(Style.space(285), monthCol.implicitHeight) : 0
                 Column {
                   id: monthCol
                   width: parent.width
