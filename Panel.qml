@@ -465,15 +465,15 @@ Panel {
               width: parent.width
               spacing: Style.space(6)
 
-              // Month grid — unified min-height + breathing room, scrolls via outer Flickable if exceeds
+              // Month grid — tightened: small min to keep calendar close to nav/pills (extra space moved after events)
               Item {
                 visible: root.viewMode === "month"
                 width: parent.width
-                height: visible ? Math.max(Style.space(360), monthCol.implicitHeight) : 0
+                height: visible ? Math.max(Style.space(290), monthCol.implicitHeight) : 0
                 Column {
                   id: monthCol
                   width: parent.width
-                  spacing: Style.space(8)
+                  spacing: Style.space(2)
                   Item {
                     id: monthGridWrap
                     width: gridColumn.width
@@ -531,11 +531,11 @@ Panel {
                     }
                     Rectangle { x: gridColumn.x + root.weekColumnWidth + root.cellSpacing + Math.round((root.gutterWidth - width)/2); y: gridColumn.y + headerRow.height + gridColumn.spacing; width: Style.spacing.hairline; height: gridColumn.height - headerRow.height - gridColumn.spacing; color: root.contentForeground; opacity: 0.1 }
                   }
-                  // Month stepping under grid
+                  // Month stepping under grid — tightened to calendar
                   Item {
-                    width: parent.width; height: monthNav.height + Style.space(6)
+                    width: parent.width; height: monthNav.height + Style.space(2)
                     Item {
-                      id: monthNav; anchors.horizontalCenter: parent.horizontalCenter; y: Style.space(6); width: gridColumn.width; height: monthLabel.implicitHeight + Style.space(8)
+                      id: monthNav; anchors.horizontalCenter: parent.horizontalCenter; y: Style.space(2); width: gridColumn.width; height: monthLabel.implicitHeight + Style.space(8)
                       Text { id: monthLabel; anchors.horizontalCenter: parent.horizontalCenter; anchors.verticalCenter: parent.verticalCenter; width: Style.space(150); horizontalAlignment: Text.AlignHCenter; text: Qt.formatDate(root.viewDate, "MMMM yyyy").toUpperCase(); color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.body; font.letterSpacing: 1 }
                       PanelActionButton { anchors.left: parent.left; anchors.leftMargin: -Style.space(8); anchors.verticalCenter: parent.verticalCenter; iconText: "󰅁"; tooltipText: "Previous month"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.moveMonth(-1) }
                       PanelActionButton { anchors.right: parent.right; anchors.rightMargin: -Style.space(8); anchors.verticalCenter: parent.verticalCenter; iconText: "󰅂"; tooltipText: "Next month"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.moveMonth(1) }
@@ -797,14 +797,14 @@ Panel {
             }
           }
 
-          // ---- Pills: Month / Week / Upcoming / Tasks (directly under calendar)
+          // ---- Pills: Month / Week / Upcoming / Tasks — tightened to calendar
           Item {
             width: parent.width
-            height: switcherRow.height + Style.space(10)
+            height: switcherRow.height + Style.space(4)
             Rectangle {
               anchors.centerIn: parent
               width: switcherRow.width + Style.space(14)
-              height: switcherRow.height + Style.space(8)
+              height: switcherRow.height + Style.space(4)
               radius: Style.cornerRadius + 2
               color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.04)
               border.width: Style.spacing.hairline
@@ -848,6 +848,8 @@ Panel {
               }
             }
           }
+
+          Item { width: parent.width; height: Style.space(10) } // extra gap pills → events
 
           // ---- Divider + Events card (below pills, before bottom actions)
           Column {
@@ -935,6 +937,8 @@ Panel {
               }
             }
           }
+
+          Item { width: parent.width; height: Style.space(40) } // breathing room events → actions increased
 
           // ---- Bottom action row: Sync / Add event / Add task / Settings
           Row {
