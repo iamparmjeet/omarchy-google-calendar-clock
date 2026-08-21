@@ -16,7 +16,7 @@
 #                        gcloud auth revoke). Requires re-auth on next setup.
 #                        Online revoke still needs myaccount.google.com/permissions.
 #   --purge-packages     also remove installed packages (google-cloud-cli via
-#                        pacman, @googleworkspace/cli via npm). Needs sudo.
+#                        yay AUR, @googleworkspace/cli via npm). Needs sudo.
 #   --purge-all          shorthand for --purge-data --purge-plugin --purge-config
 #                        --purge-credentials --purge-packages (full reset)
 #   --dry-run            print what would happen without doing it
@@ -173,10 +173,14 @@ main() {
 
   if $PURGE_PACKAGES; then
     info "Purging installed packages (needs confirmation)…"
-    # google-cloud-cli via pacman
+    # google-cloud-cli via yay (AUR) / pacman
     if pacman -Q google-cloud-cli 2>/dev/null >/dev/null; then
-      if ask "Remove google-cloud-cli (~313 MiB) via pacman (needs sudo)?"; then
-        run sudo pacman -Rns --noconfirm google-cloud-cli || warn "pacman remove failed"
+      if ask "Remove google-cloud-cli (~313 MiB, yay AUR) via pacman/yay (needs sudo)?"; then
+        if command -v yay >/dev/null 2>&1; then
+          run yay -Rns --noconfirm google-cloud-cli 2>/dev/null || run sudo pacman -Rns --noconfirm google-cloud-cli || warn "remove failed"
+        else
+          run sudo pacman -Rns --noconfirm google-cloud-cli || warn "pacman remove failed (install yay then: yay -Rns google-cloud-cli)"
+        fi
         ok "removed google-cloud-cli"
       else
         info "kept google-cloud-cli"

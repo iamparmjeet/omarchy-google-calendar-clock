@@ -58,7 +58,7 @@ The QML never talks to Google. It reads a cached JSON file; writes go through `g
 ## Requirements
 
 - Omarchy 4 (Quickshell shell)
-- `gcloud` (Google Cloud SDK) and `gws` on `PATH` *(setup script installs both on Arch if missing)*
+- `gcloud` (Google Cloud SDK) and `gws` on `PATH` *(setup script installs both on Omarchy/Arch if missing: `google-cloud-cli` via `yay` AUR + `gws` via `npm` `@googleworkspace/cli`)*
 - `python3` with `zoneinfo`/`tzdata` (Python 3.9+) — preinstalled on Omarchy
 - A GCP project for the OAuth client (the setup script creates/uses one — no manual GCP console needed for most users)
 
@@ -87,7 +87,7 @@ omarchy plugin enable parm.clock center
 
 What `setup.sh` does, in order:
 
-1. Verifies `gcloud` + `gws` are installed (installs via `pacman` on Arch if missing);
+1. Verifies `gcloud` + `gws` are installed (installs via `yay` AUR for `google-cloud-cli` + `npm` for `@googleworkspace/cli` on Omarchy/Arch if missing, prompts `[Y/n]` with env + sizes);
 2. Runs `gws auth setup --project omarchy-clock` (enables Calendar + Tasks APIs and ensures an OAuth client);
 3. Runs `gws auth login --services calendar,tasks` — **this is the one manual step**: a browser opens for a single Google consent screen;
 4. Verifies authentication (`gws auth status`);
@@ -219,7 +219,7 @@ uninstall.sh --purge-plugin       # also `omarchy plugin remove parm.clock`
 uninstall.sh --purge-config       # also remove the parm.clock entry from shell.json
 uninstall.sh --purge-credentials  # also delete local OAuth (~/.config/gws + gws auth logout)
                                   # online revoke still needed: myaccount.google.com/permissions
-uninstall.sh --purge-packages     # also remove packages (google-cloud-cli via pacman,
+uninstall.sh --purge-packages     # also remove packages (google-cloud-cli via yay AUR,
                                   # @googleworkspace/cli via npm, cargo gws)
 uninstall.sh --purge-all          # shorthand for --purge-data --purge-plugin --purge-config
                                   # --purge-credentials --purge-packages (full reset)

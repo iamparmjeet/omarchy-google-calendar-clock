@@ -3,8 +3,9 @@
 # Set up the parm.clock Google Calendar/Tasks plugin.
 #
 # Does, in order:
-#   1. verify gcloud + gws are installed (prompts before installing; gws is
-#      googleworkspace/cli via npm/cargo/installer, NOT the pacman 'gws' package)
+#   1. verify gcloud + gws are installed (prompts before installing; gcloud is
+#      google-cloud-cli AUR via yay, gws is googleworkspace/cli via npm/cargo,
+#      NOT the pacman 'gws' git-workspace helper)
 #   2. gws auth setup --project <project>   (enable Calendar+Tasks APIs, OAuth client)
 #   3. gws auth login --services calendar,tasks   (ONE browser consent)
 #   4. gws auth status -> assert authenticated
@@ -156,25 +157,41 @@ ensure_deps() {
   info "Checking dependencies (gcloud, gws, python3)…"
   info "Environment: PATH=$PATH"
   info "  node=$(command_exists node && node --version 2>/dev/null || echo 'missing')  npm=$(command_exists npm && npm --version 2>/dev/null || echo 'missing')  cargo=$(command_exists cargo && cargo --version 2>/dev/null | head -1 || echo 'missing')"
-  info "  pacman=$(command_exists pacman && echo yes || echo no)  python3=$(command_exists python3 && python3 --version 2>/dev/null || echo 'missing')"
+  info "  pacman=$(command_exists pacman && echo yes || echo no)  yay=$(command_exists yay && echo yes || echo no)  python3=$(command_exists python3 && python3 --version 2>/dev/null || echo 'missing')"
 
   # python3 is hard requirement
   command_exists python3 || die "python3 is required but not found. Install python3 and re-run."
 
-  # gcloud
+  # gcloud — google-cloud-cli is AUR (yay), not extra
   if ! command_exists gcloud; then
-    warn "gcloud not found. It provides 'gcloud' for GCP project setup (google-cloud-cli, ~313MiB)."
-    if ask "Install google-cloud-cli via pacman (needs sudo)?"; then
-      if command_exists pacman; then
-        info "Installing google-cloud-cli…"
-        $DRY_RUN || sudo pacman -S --needed --noconfirm google-cloud-cli || \
+    warn "gcloud not found. It provides 'gcloud' for GCP project setup (google-cloud-cli AUR, ~313MiB)."
+    if ask "Install google-cloud-cli via yay/pacman (needs sudo)?"; then
+      if $DRY_RUN; then
+        info "Would install google-cloud-cli (yay -S or pacman -S)"
+      elif command_exists yay; then
+        info "Installing google-cloud-cli via yay…"
+        yay -S --needed --noconfirm google-cloud-cli || \
+          die "gcloud install via yay failed; try: yay -S google-cloud-cli  or  https://cloud.google.com/sdk/docs/install"
+        ok "gcloud installed via yay."
+      elif command_exists pacman && pacman -Si google-cloud-cli >/dev/null 2>&1; then
+        info "Installing google-cloud-cli via pacman…"
+        sudo pacman -S --needed --noconfirm google-cloud-cli || \
           die "gcloud install failed; install it manually (https://cloud.google.com/sdk/docs/install) and re-run."
-        ok "gcloud installed."
+        ok "gcloud installed via pacman."
+      elif command_exists pacman; then
+        # AUR but yay not installed — try pacman anyway, else instruct yay
+        warn "google-cloud-cli is AUR — yay is recommended (pacman alone won't find it)."
+        info "Trying pacman (will fail if not in extra, then try manual)…"
+        if sudo pacman -S --needed --noconfirm google-cloud-cli 2>/dev/null; then
+          ok "gcloud installed via pacman."
+        else
+          die "gcloud not in pacman repos. Install yay (https://github.com/Jguer/yay) then: yay -S google-cloud-cli  — or use https://cloud.google.com/sdk/docs/install"
+        fi
       else
-        die "gcloud not found and pacman not available. Install the Google Cloud SDK from https://cloud.google.com/sdk/docs/install and re-run."
+        die "gcloud not found and no AUR helper. Install yay then: yay -S google-cloud-cli  or  https://cloud.google.com/sdk/docs/install"
       fi
     else
-      die "gcloud is required. Install it and re-run setup.sh."
+      die "gcloud is required. Install via: yay -S google-cloud-cli  and re-run setup.sh."
     fi
   fi
 
