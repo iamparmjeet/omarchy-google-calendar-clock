@@ -48,8 +48,15 @@ Google (Calendar + Tasks)  ← OAuth (gws owns tokens)
   ~/.local/state/parm.clock/state.json   ← single source of truth
         │
         ▼
-  Model.js + BarWidget.qml + Panel.qml   (QML reads state.json only)
+  Model.js + BarWidget.qml + Panel.qml + Clock*.qml  (QML reads state.json only)
 ```
+
+The QML layer is split into components: `Panel.qml` is the container (state,
+settings persistence, gws plumbing), rendering is delegated to `Clock*` files
+(`ClockMonthView`, `ClockWeekView`, `ClockUpcomingView`, `ClockTasksView`,
+`ClockEventsCard`, `ClockEventForm`, `ClockTaskForm`, `ClockSettingsSection`,
+plus leaf rows/cells). All Google-controlled strings render with
+`textFormat: Text.PlainText`.
 
 The QML never talks to Google. It reads a cached JSON file; writes go through `gws` and trigger a re-sync. A systemd user timer runs the sync every 5 minutes, so the widget stays up to date and works offline from cached data.
 
@@ -58,7 +65,7 @@ The QML never talks to Google. It reads a cached JSON file; writes go through `g
 ## Requirements
 
 - Omarchy 4 (Quickshell shell)
-- `gcloud` (Google Cloud SDK) and `gws` on `PATH` *(setup script installs both on Omarchy/Arch if missing: `google-cloud-cli` via `yay` AUR + `gws` via `npm` `@googleworkspace/cli`)*
+- `gcloud` (Google Cloud SDK) and `gws` on `PATH` *(setup script installs both on Omarchy/Arch if missing: `google-cloud-cli` via `yay` AUR + `gws` via `npm` `@googleworkspace/cli@0.22.5` — pinned, matching the cargo fallback)*
 - `python3` with `zoneinfo`/`tzdata` (Python 3.9+) — preinstalled on Omarchy
 - A GCP project for the OAuth client (the setup script creates/uses one — no manual GCP console needed for most users)
 
@@ -87,7 +94,7 @@ omarchy plugin enable parm.clock center
 
 What `setup.sh` does, in order:
 
-1. Verifies `gcloud` + `gws` are installed (installs via `yay` AUR for `google-cloud-cli` + `npm` for `@googleworkspace/cli` on Omarchy/Arch if missing, prompts `[Y/n]` with env + sizes);
+1. Verifies `gcloud` + `gws` are installed (installs via `yay` AUR for `google-cloud-cli` + `npm` for `@googleworkspace/cli@0.22.5` on Omarchy/Arch if missing, prompts `[Y/n]` with env + sizes);
 2. Runs `gws auth setup --project omarchy-clock` (enables Calendar + Tasks APIs and ensures an OAuth client);
 3. Runs `gws auth login --services calendar,tasks` — **this is the one manual step**: a browser opens for a single Google consent screen;
 4. Verifies authentication (`gws auth status`);
