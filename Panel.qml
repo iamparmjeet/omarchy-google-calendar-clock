@@ -405,81 +405,83 @@ Panel {
             }
           }
 
-          // ---- Calendar area (switches by viewMode)
+          // ---- Calendar area: only the active view is instantiated; switching
+          //      pills destroys the old view and creates the new one.
           Item {
             width: parent.width
-            height: monthView.visible ? Math.max(monthView.minHeight, monthView.implicitHeight) : 0
-            ClockMonthView {
-              id: monthView
+            height: viewLoader.item ? Math.max(viewLoader.item.minHeight, viewLoader.item.implicitHeight) : 0
+            Loader {
+              id: viewLoader
               width: parent.width
-              visible: root.viewMode === "month"
-              weeks: root.weeks
-              weekdays: root.weekdays
-              viewDate: root.viewDate
-              selectedKey: root.selectedKey
-              todayKey: root.todayKey
-              eventIndex: root.eventIdx
-              hiddenCalendars: root.hiddenCalendars
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              nextWeekStartLabel: root.nextWeekStartLabel
-              dotColor: root.dotColor
-              onSelectDay: root.selectDay(key)
-              onStepMonth: root.moveMonth(delta)
-              onToggleWeekStartRequested: root.toggleWeekStart()
-            }
-          }
-          Item {
-            width: parent.width
-            height: weekView.visible ? Math.max(weekView.minHeight, weekView.implicitHeight) : 0
-            ClockWeekView {
-              id: weekView
-              width: parent.width
-              visible: root.viewMode === "week"
-              weekKeys: root.weekKeys
-              todayKey: root.todayKey
-              selectedKey: root.selectedKey
-              eventIndex: root.eventIdx
-              hiddenCalendars: root.hiddenCalendars
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              dotColor: root.dotColor
-              onSelectDay: root.selectDay(key)
-              onStepWeek: root.moveWeek(delta)
-              onBackToTodayRequested: root.goToToday()
-              onOpenEvent: root.openEventLink(ev)
-            }
-          }
-          Item {
-            width: parent.width
-            height: upcomingView.visible ? Math.max(upcomingView.minHeight, upcomingView.implicitHeight) : 0
-            ClockUpcomingView {
-              id: upcomingView
-              width: parent.width
-              visible: root.viewMode === "upcoming"
-              eventIndex: root.eventIdx
-              todayKey: root.todayKey
-              hiddenCalendars: root.hiddenCalendars
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              dotColor: root.dotColor
-              onOpenEvent: root.openEventLink(ev)
-            }
-          }
-          Item {
-            width: parent.width
-            height: tasksView.visible ? Math.max(tasksView.minHeight, tasksView.implicitHeight) : 0
-            ClockTasksView {
-              id: tasksView
-              width: parent.width
-              visible: root.viewMode === "tasks"
-              tasks: root.filteredTasks
-              showCompleted: root.showCompletedTasks
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              onShowCompletedToggled: root.toggleShowCompleted()
-              onTaskToggled: (task && task.status === "completed") ? root.uncompleteTask(task) : root.completeTask(task)
-              onTaskDeleted: root.deleteTask(task)
+              sourceComponent: root.viewMode === "month" ? monthComponent
+                : root.viewMode === "week" ? weekComponent
+                : root.viewMode === "upcoming" ? upcomingComponent
+                : tasksComponent
+
+              Component {
+                id: monthComponent
+                ClockMonthView {
+                  width: parent.width
+                  weeks: root.weeks
+                  weekdays: root.weekdays
+                  viewDate: root.viewDate
+                  selectedKey: root.selectedKey
+                  todayKey: root.todayKey
+                  eventIndex: root.eventIdx
+                  hiddenCalendars: root.hiddenCalendars
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  nextWeekStartLabel: root.nextWeekStartLabel
+                  dotColor: root.dotColor
+                  onSelectDay: root.selectDay(key)
+                  onStepMonth: root.moveMonth(delta)
+                  onToggleWeekStartRequested: root.toggleWeekStart()
+                }
+              }
+              Component {
+                id: weekComponent
+                ClockWeekView {
+                  width: parent.width
+                  weekKeys: root.weekKeys
+                  todayKey: root.todayKey
+                  selectedKey: root.selectedKey
+                  eventIndex: root.eventIdx
+                  hiddenCalendars: root.hiddenCalendars
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  dotColor: root.dotColor
+                  onSelectDay: root.selectDay(key)
+                  onStepWeek: root.moveWeek(delta)
+                  onBackToTodayRequested: root.goToToday()
+                  onOpenEvent: root.openEventLink(ev)
+                }
+              }
+              Component {
+                id: upcomingComponent
+                ClockUpcomingView {
+                  width: parent.width
+                  eventIndex: root.eventIdx
+                  todayKey: root.todayKey
+                  hiddenCalendars: root.hiddenCalendars
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  dotColor: root.dotColor
+                  onOpenEvent: root.openEventLink(ev)
+                }
+              }
+              Component {
+                id: tasksComponent
+                ClockTasksView {
+                  width: parent.width
+                  tasks: root.filteredTasks
+                  showCompleted: root.showCompletedTasks
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  onShowCompletedToggled: root.toggleShowCompleted()
+                  onTaskToggled: (task && task.status === "completed") ? root.uncompleteTask(task) : root.completeTask(task)
+                  onTaskDeleted: root.deleteTask(task)
+                }
+              }
             }
           }
 
