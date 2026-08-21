@@ -275,10 +275,26 @@ def run_sync(
         def _fetch_tasks(tl_id: str) -> list[dict]:
             out: list[dict] = []
             try:
-                for raw in gws_adapter.list_tasks(tl_id, due_max=time_max, gws_path=exe):
-                    if raw.get("status") == "completed":
-                        continue
-                    out.append(normalize_task(raw, tl_id))
+                for raw in gws_adapter.list_tasks(tl_id, due_max=time_max, show_completed=True, gws_path=exe):
+                    normalized = normalize_task(raw, tl_id)
+                    # Recent-only filter for completed tasks: keep completed only if
+                    # completed within last 30 days, to avoid syncing hundreds of
+                    # historical tasks while still showing recent completions mixed
+                    # with open tasks. Undated completed without timestamp is kept
+                    # if due is undated (user just completed it).
+                    if normalized.get("status") == "completed":
+                        comp = normalized.get("completed") or ""
+                        if comp:
+                            try:
+                                from sync.schema import parse_datetime
+                                dt = parse_datetime(comp)
+                                if dt is not None:
+                                    age_days = (utc_now() - dt).total_seconds() / 86400
+                                    if age_days > 30:
+                                        continue
+                            except Exception:
+                                pass
+                    out.append(normalized)
             except (gws_adapter.AuthError, gws_adapter.ApiError):
                 raise
             except gws_adapter.GwsError:

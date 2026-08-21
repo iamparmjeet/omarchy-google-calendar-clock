@@ -149,6 +149,100 @@ function testSyncStatusLabel() {
   assert.strictEqual(Model.syncStatusLabel({ state: "auth", lastOk: null }, now), "Auth needed — run setup");
 }
 
+// ---- parseDateKey / dayDistance / relativeDayLabel / overdue helpers ------
+
+function testParseDateKey() {
+  assert.deepStrictEqual(Model.parseDateKey("2026-08-20"), { year: 2026, month: 7, day: 20 });
+  assert.strictEqual(Model.parseDateKey("2026-08-20T09:00:00"), null);
+  assert.strictEqual(Model.parseDateKey(""), null);
+  assert.strictEqual(Model.parseDateKey(null), null);
+}
+
+function testDayDistance() {
+  assert.strictEqual(Model.dayDistance("2026-08-20", "2026-08-20"), 0);
+  assert.strictEqual(Model.dayDistance("2026-08-21", "2026-08-20"), 1);
+  assert.strictEqual(Model.dayDistance("2026-08-10", "2026-08-20"), -10);
+  // Month and year boundaries.
+  assert.strictEqual(Model.dayDistance("2026-09-01", "2026-08-31"), 1);
+  assert.strictEqual(Model.dayDistance("2027-01-01", "2026-12-31"), 1);
+  assert.ok(isNaN(Model.dayDistance("garbage", "2026-08-20")));
+}
+
+function testRelativeDayLabel() {
+  assert.strictEqual(Model.relativeDayLabel("2026-08-20", "2026-08-20"), "Today");
+  assert.strictEqual(Model.relativeDayLabel("2026-08-21", "2026-08-20"), "Tomorrow");
+  assert.strictEqual(Model.relativeDayLabel("2026-08-19", "2026-08-20"), "Yesterday");
+  assert.strictEqual(Model.relativeDayLabel("2026-08-25", "2026-08-20"), "");
+  assert.strictEqual(Model.relativeDayLabel("bad", "2026-08-20"), "");
+}
+
+function testOverdueDueLabel() {
+  assert.strictEqual(Model.overdueDueLabel("2026-08-19", "2026-08-20"), "yesterday");
+  assert.strictEqual(Model.overdueDueLabel("2026-08-17", "2026-08-20"), "3d ago");
+  assert.strictEqual(Model.overdueDueLabel("2026-08-06", "2026-08-20"), "2w ago");
+  assert.strictEqual(Model.overdueDueLabel("2026-08-20", "2026-08-20"), "today");
+}
+
+function testOverdueTasks() {
+  const overdue = Model.overdueTasks(tasks, "2026-08-20");
+  // t2 (due 08-10) only; completed and no-due tasks are excluded.
+  assert.deepStrictEqual(overdue.map((t) => t.id), ["t2"]);
+  // Oldest due first when several are overdue.
+  const many = [
+    { id: "b", status: "needsAction", due: "2026-08-15" },
+    { id: "a", status: "needsAction", due: "2026-08-01" },
+    { id: "c", status: "needsAction", due: "2026-08-20" },
+  ];
+  assert.deepStrictEqual(
+    Model.overdueTasks(many, "2026-08-20").map((t) => t.id),
+    ["a", "b"]
+  );
+}
+
+function testEventPhase() {
+  const ev = events[0]; // 09:00–10:00 +05:30 on 2026-08-20
+  assert.strictEqual(Model.eventPhase(ev, "2026-08-20T08:00:00+05:30"), "upcoming");
+  assert.strictEqual(Model.eventPhase(ev, "2026-08-20T09:30:00+05:30"), "ongoing");
+  assert.strictEqual(Model.eventPhase(ev, "2026-08-20T11:00:00+05:30"), "past");
+  // All-day and malformed events phase as "" — the UI leaves them alone.
+  assert.strictEqual(Model.eventPhase(events[1], "2026-08-19T10:00:00+05:30"), "");
+  assert.strictEqual(Model.eventPhase(null, "2026-08-20T10:00:00+05:30"), "");
+}
+
+function testWeekKeysFor() {
+  // Monday-start week containing Wed 2026-08-20 (a Thursday-ish check too).
+  assert.deepStrictEqual(
+    Model.weekKeysFor("2026-08-20", 1),
+    ["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23"]
+  );
+  // Sunday start pulls the previous Sunday.
+  assert.strictEqual(Model.weekKeysFor("2026-08-20", 0)[0], "2026-08-16");
+  // Week boundaries roll across months correctly.
+  assert.deepStrictEqual(
+    Model.weekKeysFor("2026-09-01", 1).slice(0, 2),
+    ["2026-08-31", "2026-09-01"]
+  );
+  assert.deepStrictEqual(Model.weekKeysFor("bad", 1), []);
+}
+
+function testUpcomingGroups() {
+  const idx = Model.eventIndex(events);
+  const groups = Model.upcomingGroups(idx, "2026-08-19", 14);
+  // Days with no events are skipped; multi-day e2 covers 08-19 and 08-20.
+  assert.deepStrictEqual(groups.map((g) => g.key), ["2026-08-19", "2026-08-20", "2026-08-21"]);
+  assert.strictEqual(groups[0].events[0].id, "e2");
+}
+
+function testTaskGroups() {
+  const g = Model.taskGroups(tasks, "2026-08-20");
+  assert.deepStrictEqual(g.overdue.map((t) => t.id), ["t2"]);
+  assert.deepStrictEqual(g.today.map((t) => t.id), ["t1"]);
+  assert.deepStrictEqual(g.upcoming.map((t) => t.id), []);
+  assert.deepStrictEqual(g.undated.map((t) => t.id), ["t3"]);
+  // Completed tasks land nowhere.
+  assert.ok(![].concat(g.overdue, g.today, g.upcoming, g.undated).some((t) => t.id === "t4"));
+}
+
 // --------------------------------------------------------------------------
 
 const tests = [
@@ -169,6 +263,15 @@ const tests = [
   testParseStateEmpty,
   testCalendarColor,
   testSyncStatusLabel,
+  testParseDateKey,
+  testDayDistance,
+  testRelativeDayLabel,
+  testOverdueDueLabel,
+  testOverdueTasks,
+  testEventPhase,
+  testWeekKeysFor,
+  testUpcomingGroups,
+  testTaskGroups,
 ];
 
 let failed = 0;

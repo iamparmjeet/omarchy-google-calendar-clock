@@ -71,11 +71,13 @@ if resource == "tasklists" and method == "list":
 
 # --- tasks.tasks list ---
 if resource == "tasks" and method == "list":
+    from datetime import datetime, timezone, timedelta
+    recent_completed = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
     print(json.dumps({"items": [
         {"id": "t1", "title": "Due today", "status": "needsAction",
          "due": "2026-08-20T00:00:00.000Z"},
         {"id": "t2", "title": "Done", "status": "completed",
-         "completed": "2026-08-19T10:00:00.000Z"},
+         "completed": recent_completed},
     ]}))
     sys.exit(0)
 
@@ -139,9 +141,9 @@ class TestSyncPipeline(unittest.TestCase):
         self.assertEqual(state["syncStatus"]["state"], "ok")
         # Hidden calendar filtered out.
         self.assertEqual([c["id"] for c in state["calendars"]], ["primary"])
-        # Cancelled event dropped; duplicate e2 deduped; completed task dropped.
+        # Cancelled event dropped; duplicate e2 deduped; completed task now kept (recent).
         self.assertEqual([e["id"] for e in state["events"]], ["e1", "e2"])
-        self.assertEqual([t["id"] for t in state["tasks"]], ["t1"])
+        self.assertEqual(sorted([t["id"] for t in state["tasks"]]), ["t1", "t2"])
         self.assertEqual(state["events"][1]["allDay"], True)
         self.assertEqual(state["events"][1]["end"], "2026-08-21")
 

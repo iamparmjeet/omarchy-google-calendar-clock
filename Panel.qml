@@ -61,6 +61,10 @@ Panel {
   readonly property bool expanded: setting("defaultView", "compact") === "expanded"
   property bool settingsVisible: false
   readonly property var hiddenCalendars: setting("hiddenCalendars", [])
+  readonly property string viewMode: {
+    var v = String(setting("panelView", "month"))
+    return v === "week" || v === "upcoming" || v === "tasks" ? v : "month"
+  }
 
   // Pinned to today, not to the month being browsed — stepping through the
   // calendar does not change how much of the year is gone.
@@ -194,6 +198,11 @@ Panel {
 
   function toggleExpand() {
     persistSettings({ defaultView: root.expanded ? "compact" : "expanded" })
+  }
+
+  function setViewMode(mode) {
+    if (mode === root.viewMode) return
+    persistSettings({ panelView: mode })
   }
 
   function toggleSettings() {
@@ -964,75 +973,175 @@ Panel {
             }
           }
 
-          // ---- Compact agenda strip (today's events), visible when not expanded.
-          Column {
-            id: compactStrip
-            visible: !root.expanded
+          // ---- View switcher: 4 tabs Month/Week/Upcoming/Tasks (directly under calendar).
+          Item {
             width: parent.width
-            spacing: Style.space(8)
-
-            PanelSeparator { width: parent.width; foreground: root.contentForeground }
-
-            Text {
-              width: parent.width
-              text: "TODAY"
-              color: Qt.darker(root.contentForeground, 1.4)
-              font.family: root.contentFontFamily
-              font.pixelSize: Style.font.caption
-              font.letterSpacing: 1
-              font.bold: true
+            height: switcherRow.height + Style.space(10)
+            Rectangle {
+              anchors.centerIn: parent
+              width: switcherRow.width + Style.space(14)
+              height: switcherRow.height + Style.space(8)
+              radius: Style.cornerRadius + 2
+              color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.04)
+              border.width: Style.spacing.hairline
+              border.color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10)
             }
-
-            AgendaList { width: parent.width; foreground: root.contentForeground; fontFamily: root.contentFontFamily }
+            Row {
+              id: switcherRow
+              anchors.centerIn: parent
+              spacing: Style.space(2)
+              Repeater {
+                model: [
+                  { mode: "month", label: "MONTH" },
+                  { mode: "week", label: "WEEK" },
+                  { mode: "upcoming", label: "UPCOMING" },
+                  { mode: "tasks", label: "TASKS" }
+                ]
+                Rectangle {
+                  id: viewTab
+                  required property var modelData
+                  readonly property bool active: root.viewMode === modelData.mode
+                  readonly property bool hot: tabMouse.containsMouse
+                  width: tabLabel.implicitWidth + Style.space(20)
+                  height: tabLabel.implicitHeight + Style.space(10)
+                  radius: Style.cornerRadius
+                  color: active ? Style.selectedFillFor(root.contentForeground, Color.accent) : hot ? Style.hoverFillFor(root.contentForeground, Color.accent) : "transparent"
+                  border.width: active ? Style.spacing.hairline : 0
+                  border.color: Style.selectedBorderFor(root.contentForeground, Color.accent)
+                  Behavior on color { ColorAnimation { duration: 100 } }
+                  Text {
+                    id: tabLabel
+                    anchors.centerIn: parent
+                    text: viewTab.modelData.label
+                    color: viewTab.active ? Style.selectedStateColor(root.contentForeground, Color.accent) : Qt.darker(root.contentForeground, 1.5)
+                    font.family: root.contentFontFamily
+                    font.pixelSize: Style.font.caption
+                    font.letterSpacing: 1
+                    font.bold: viewTab.active
+                  }
+                  MouseArea {
+                    id: tabMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.setViewMode(viewTab.modelData.mode)
+                  }
+                }
+              }
+            }
           }
 
-          // ---- Header actions.
+          // ---- Bordered events area: below switcher, before bottom actions.
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+            PanelSeparator { width: parent.width; foreground: root.contentForeground }
+            Rectangle {
+              width: parent.width
+              radius: Style.cornerRadius + 4
+              color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.03)
+              border.width: Style.spacing.hairline
+              border.color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.12)
+              height: eventsInner.implicitHeight + Style.space(16)
+              clip: true
+              Column {
+                id: eventsInner
+                width: parent.width - Style.space(16)
+                x: Style.space(8)
+                y: Style.space(8)
+                spacing: Style.space(8)
+                Column {
+                  visible: root.viewMode === "month"
+                  width: parent.width
+                  spacing: Style.space(8)
+                  Text { width: parent.width; text: selectedDateLabel(); color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.subtitle; font.bold: true }
+                  AgendaList { width: parent.width; foreground: root.contentForeground; fontFamily: root.contentFontFamily }
+                }
+                Column {
+                  visible: root.viewMode === "week"
+                  width: parent.width
+                  spacing: Style.space(8)
+                  Text { width: parent.width; text: selectedDateLabel() + " — Week"; color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.subtitle; font.bold: true }
+                  AgendaList { width: parent.width; foreground: root.contentForeground; fontFamily: root.contentFontFamily }
+                }
+                Column {
+                  visible: root.viewMode === "upcoming"
+                  width: parent.width
+                  spacing: Style.space(4)
+                  Text { width: parent.width; text: "UPCOMING — NEXT 14 DAYS"; color: Qt.darker(root.contentForeground, 1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
+                  Repeater {
+                    model: {
+                      var out = []
+                      var base = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+                      for (var d = 0; d < 14; d++) {
+                        var dt = new Date(base.getFullYear(), base.getMonth(), base.getDate() + d)
+                        var k = Model.dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate())
+                        var evs = Model.eventsForDate(eventIdx, k).filter(function(ev){ return !isHidden(ev.calendarId) })
+                        if (evs.length > 0) out.push({key:k, events:evs})
+                      }
+                      return out
+                    }
+                    Column {
+                      required property var modelData
+                      width: parent.width
+                      spacing: Style.space(4)
+                      Text {
+                        width: parent.width
+                        text: {
+                          var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(modelData.key)
+                          return m ? Qt.formatDate(new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10)), "dddd, MMMM d") : modelData.key
+                        }
+                        color: Qt.darker(root.contentForeground, 1.5)
+                        font.family: root.contentFontFamily
+                        font.pixelSize: Style.font.caption
+                        font.bold: true
+                      }
+                      Repeater {
+                        model: modelData.events
+                        Row {
+                          required property var modelData
+                          width: parent.width
+                          spacing: Style.space(8)
+                          Rectangle { width: Style.space(3); height: Style.space(14); radius:1; anchors.verticalCenter: parent.verticalCenter; color: dotColor(modelData) }
+                          Text { width: Style.space(66); anchors.verticalCenter: parent.verticalCenter; text: modelData.allDay ? "all day" : timeText(modelData); color: Qt.darker(root.contentForeground,1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.bodySmall; elide:Text.ElideRight }
+                          Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.title; color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.bodySmall; elide:Text.ElideRight; width: Math.max(0, parent.width - 66 - 3 - 8*3 - 24) }
+                        }
+                      }
+                    }
+                  }
+                  Text {
+                    visible: {
+                      var c=0; var base=new Date(today.getFullYear(), today.getMonth(), today.getDate())
+                      for(var d=0;d<14;d++){ var dt=new Date(base.getFullYear(), base.getMonth(), base.getDate()+d); var k=Model.dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate()); if(Model.eventsForDate(eventIdx,k).filter(function(ev){return !isHidden(ev.calendarId)}).length>0) c++ }
+                      return c===0
+                    }
+                    width: parent.width
+                    text: "No events in next 14 days."
+                    color: Qt.darker(root.contentForeground,1.8)
+                    font.family: root.contentFontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.italic: true
+                  }
+                }
+                Column {
+                  visible: root.viewMode === "tasks"
+                  width: parent.width
+                  spacing: Style.space(8)
+                  Text { width: parent.width; text: "TASKS"; color: Qt.darker(root.contentForeground, 1.4); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: true }
+                  TasksList { width: parent.width; foreground: root.contentForeground; fontFamily: root.contentFontFamily }
+                }
+              }
+            }
+          }
+
+          // ---- Bottom action row: 4 buttons Sync, Add event, Add tasks, Settings
           Row {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Style.space(6)
-
-            Button {
-              iconText: "󰓦"
-              tooltipText: "Sync now"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              onClicked: root.runSync()
-            }
-
-            Button {
-              iconText: "󰐕"
-              tooltipText: "New event"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              selected: root.editingNewEvent
-              onClicked: root.toggleNewEvent()
-            }
-
-            Button {
-              iconText: "󰄳"
-              tooltipText: "New task"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              selected: root.editingNewTask
-              onClicked: root.toggleNewTask()
-            }
-
-            Button {
-              iconText: "󰒓"
-              tooltipText: "Settings"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              selected: root.settingsVisible
-              onClicked: root.toggleSettings()
-            }
-
-            Button {
-              iconText: root.expanded ? "󰝤" : "󰝧"
-              tooltipText: root.expanded ? "Compact view" : "Expand view"
-              foreground: root.contentForeground
-              fontFamily: root.contentFontFamily
-              onClicked: root.toggleExpand()
-            }
+            Button { iconText: "󰓦"; tooltipText: "Sync now"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.runSync() }
+            Button { iconText: "󰐕"; tooltipText: "New event"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; selected: root.editingNewEvent; onClicked: root.toggleNewEvent() }
+            Button { iconText: "󰄳"; tooltipText: "New task"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; selected: root.editingNewTask; onClicked: root.toggleNewTask() }
+            Button { iconText: "󰒓"; tooltipText: "Settings"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; selected: root.settingsVisible; onClicked: root.toggleSettings() }
           }
 
           // ---- New event (quick add).
