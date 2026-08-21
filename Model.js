@@ -487,6 +487,128 @@ function syncStatusLabel(syncStatus, now) {
   return "Synced " + Math.round(hours / 24) + "d ago"
 }
 
+// ---- Additional helpers for week/upcoming/task grouping (pill views) ----
+
+function parseDateKey(key) {
+  var text = String(key === undefined || key === null ? "" : key)
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+  if (!m) return null
+  return { year: parseInt(m[1], 10), month: parseInt(m[2], 10) - 1, day: parseInt(m[3], 10) }
+}
+
+function dayDistance(aKey, bKey) {
+  var a = parseDateKey(aKey)
+  var b = parseDateKey(bKey)
+  if (!a || !b) return NaN
+  var da = Date.UTC(a.year, a.month, a.day)
+  var db = Date.UTC(b.year, b.month, b.day)
+  return Math.round((da - db) / MS_PER_DAY)
+}
+
+function relativeDayLabel(key, todayKey) {
+  var d = dayDistance(key, todayKey)
+  if (isNaN(d)) return ""
+  if (d === 0) return "Today"
+  if (d === 1) return "Tomorrow"
+  if (d === -1) return "Yesterday"
+  return ""
+}
+
+function overdueDueLabel(dueKey, todayKey) {
+  var d = dayDistance(todayKey, dueKey)
+  if (isNaN(d)) return ""
+  if (d === 0) return "today"
+  if (d === 1) return "yesterday"
+  if (d < 7) return d + "d ago"
+  var w = Math.round(d / 7)
+  if (w < 1) w = 1
+  return w + "w ago"
+}
+
+function overdueTasks(tasks, todayKey) {
+  var out = []
+  var list = tasks || []
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i]
+    if (t.status === "completed") continue
+    var due = taskDueDate(t)
+    if (due === "" || due >= todayKey) continue
+    // strictly overdue: due < todayKey
+    if (due < todayKey) out.push(t)
+  }
+  out.sort(function(a, b) { return taskDueDate(a).localeCompare(taskDueDate(b)) })
+  return out
+}
+
+function eventPhase(ev, now) {
+  if (!ev || ev.allDay) return ""
+  var s = ev.start || ""
+  var e = ev.end || ""
+  if (!s || !e) return ""
+  var start = Date.parse(s)
+  var end = Date.parse(e)
+  var ref = typeof now === "string" ? Date.parse(now) : (now && now.getTime ? now.getTime() : NaN)
+  if (isNaN(start) || isNaN(end) || isNaN(ref)) return ""
+  if (ref < start) return "upcoming"
+  if (ref >= start && ref < end) return "ongoing"
+  if (ref >= end) return "past"
+  return ""
+}
+
+function weekKeysFor(key, weekStart) {
+  var p = parseDateKey(key)
+  if (!p) return []
+  var ws = normalizedWeekStart(weekStart, 1)
+  var d = new Date(p.year, p.month, p.day)
+  var dow = d.getDay()
+  var delta = (dow - ws + 7) % 7
+  var start = new Date(p.year, p.month, p.day - delta)
+  var out = []
+  for (var i = 0; i < 7; i++) {
+    var cur = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
+    out.push(dateKey(cur.getFullYear(), cur.getMonth(), cur.getDate()))
+  }
+  return out
+}
+
+function upcomingGroups(index, startKey, days) {
+  var p = parseDateKey(startKey)
+  if (!p) return []
+  var n = Number(days)
+  if (!isFinite(n) || n <= 0) n = 14
+  var out = []
+  var base = new Date(p.year, p.month, p.day)
+  for (var d = 0; d < n; d++) {
+    var dt = new Date(base.getFullYear(), base.getMonth(), base.getDate() + d)
+    var k = dateKey(dt.getFullYear(), dt.getMonth(), dt.getDate())
+    var evs = eventsForDate(index, k)
+    if (evs.length > 0) out.push({ key: k, events: evs })
+  }
+  return out
+}
+
+function taskGroups(tasks, todayKey) {
+  var overdue = []
+  var todayArr = []
+  var upcoming = []
+  var undated = []
+  var list = tasks || []
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i]
+    if (t.status === "completed") continue
+    var due = taskDueDate(t)
+    if (due === "") undated.push(t)
+    else if (due < todayKey) overdue.push(t)
+    else if (due === todayKey) todayArr.push(t)
+    else upcoming.push(t)
+  }
+  overdue.sort(function(a,b){ return taskDueDate(a).localeCompare(taskDueDate(b)) })
+  todayArr.sort(function(a,b){ return (a.title||"").localeCompare(b.title||"") })
+  upcoming.sort(function(a,b){ return taskDueDate(a).localeCompare(taskDueDate(b)) })
+  undated.sort(function(a,b){ return (a.title||"").localeCompare(b.title||"") })
+  return { overdue: overdue, today: todayArr, upcoming: upcoming, undated: undated }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     dateKey: dateKey,
@@ -525,6 +647,15 @@ if (typeof module !== "undefined") {
     isStale: isStale,
     parseState: parseState,
     calendarColor: calendarColor,
-    syncStatusLabel: syncStatusLabel
+    syncStatusLabel: syncStatusLabel,
+    parseDateKey: parseDateKey,
+    dayDistance: dayDistance,
+    relativeDayLabel: relativeDayLabel,
+    overdueDueLabel: overdueDueLabel,
+    overdueTasks: overdueTasks,
+    eventPhase: eventPhase,
+    weekKeysFor: weekKeysFor,
+    upcomingGroups: upcomingGroups,
+    taskGroups: taskGroups
   }
 }
