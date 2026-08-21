@@ -577,9 +577,10 @@ Panel {
                       onClicked: goToToday()
                     }
                   }
-                  Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: Style.space(4)
+                  // Vertical stack — each day is a full-width row, easier scanning than 7 cramped cards
+                  Column {
+                    width: parent.width
+                    spacing: Style.space(6)
                     Repeater {
                       model: root.weekKeys
                       Rectangle {
@@ -589,70 +590,78 @@ Panel {
                         readonly property bool isToday: key === root.todayKey
                         readonly property bool isSelected: key === root.selectedKey
                         readonly property bool isWeekend: { var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key)); if(!m) return false; var d=new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10)); var wd=d.getDay(); return wd===0||wd===6 }
-                        width: Style.space(76); height: Style.space(150); radius: Style.cornerRadius + 3
+                        width: parent.width
+                        height: dayRow.implicitHeight + Style.space(14)
+                        radius: Style.cornerRadius + 2
                         color: isSelected ? Style.selectedFillFor(root.contentForeground, Color.accent)
-                          : isToday ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.09)
-                          : isWeekend ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.02)
-                          : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.045)
+                          : isToday ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.07)
+                          : isWeekend ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.025)
+                          : Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.035)
                         border.width: isSelected || isToday ? Style.spacing.hairline : 0
                         border.color: isSelected ? Style.selectedBorderFor(root.contentForeground, Color.accent) : Style.normalBorderFor(root.contentForeground, Color.accent)
-                        // Today accent top line
-                        Rectangle { visible: isToday && !isSelected; anchors.top: parent.top; anchors.horizontalCenter: parent.horizontalCenter; width: parent.width - Style.space(16); height: Style.space(2); radius: 1; color: Color.accent; opacity: 0.95 }
-                        Column {
-                          anchors.fill: parent; anchors.margins: Style.space(6); spacing: Style.space(5)
+                        // Left accent for today/selected
+                        Rectangle { visible: isToday || isSelected; anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; width: Style.space(3); height: parent.height - Style.space(10); radius: 1; color: isSelected ? Style.selectedStateColor(root.contentForeground, Color.accent) : Color.accent; opacity: isSelected ? 1 : 0.9 }
+                        Row {
+                          id: dayRow
+                          width: parent.width - Style.space(14)
+                          x: Style.space(7)
+                          y: Style.space(7)
+                          spacing: Style.space(10)
+                          // Date rail — compact, left-aligned
                           Column {
-                            width: parent.width; spacing: Style.space(1)
-                            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: weekDayShort(key); color: isToday ? Style.selectedStateColor(root.contentForeground, Color.accent) : isWeekend ? Qt.darker(root.contentForeground,1.6) : Qt.darker(root.contentForeground,1.35); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: isToday || isSelected }
-                            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: weekDayNum(key); color: isSelected ? Style.selectedStateColor(root.contentForeground, Color.accent) : root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: isToday ? 20 : 18; font.bold: isToday || isSelected }
-                            Text {
-                              visible: evs.length > 0
-                              width: parent.width; horizontalAlignment: Text.AlignHCenter
-                              text: evs.length === 1 ? "1 event" : evs.length + " events"
-                              color: Qt.darker(root.contentForeground, 1.8); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption - 1; font.italic: true
-                            }
+                            width: Style.space(74)
+                            spacing: Style.space(1)
+                            anchors.verticalCenter: parent.verticalCenter
+                            Text { text: weekDayShort(key); color: isToday ? Style.selectedStateColor(root.contentForeground, Color.accent) : isWeekend ? Qt.darker(root.contentForeground,1.55) : Qt.darker(root.contentForeground,1.3); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: isToday || isSelected }
+                            Text { text: weekDayNum(key) + " · " + weekMonthShort(key); color: isSelected ? Style.selectedStateColor(root.contentForeground, Color.accent) : root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: isToday ? 19 : 16; font.bold: isToday || isSelected }
+                            Text { text: isToday ? "Today" : (relativeLabel(key) || ""); color: isToday ? Color.accent : Qt.darker(root.contentForeground,1.7); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption - 1; font.italic: true; visible: text !== "" }
                           }
-                          Rectangle { width: parent.width; height: Style.spacing.hairline; color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.11) }
+                          Rectangle { width: Style.spacing.hairline; height: dayRow.height; color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.10); anchors.verticalCenter: parent.verticalCenter }
+                          // Events — vertical stack, chips grow to fill
                           Column {
-                            width: parent.width; spacing: Style.space(4)
+                            width: parent.width - Style.space(74) - Style.space(10) - Style.spacing.hairline - Style.space(6)
+                            spacing: Style.space(4)
+                            anchors.verticalCenter: parent.verticalCenter
                             Repeater {
                               model: evs.slice(0,3)
                               Rectangle {
                                 required property var modelData
                                 readonly property color chipColor: root.dotColor(modelData)
-                                width: parent.width; height: Style.space(18); radius: Style.cornerRadius
-                                color: Qt.rgba(chipColor.r, chipColor.g, chipColor.b, 0.14)
-                                border.width: Style.spacing.hairline; border.color: Qt.rgba(chipColor.r, chipColor.g, chipColor.b, 0.24)
+                                width: parent.width; height: Style.space(22); radius: Style.cornerRadius
+                                color: Qt.rgba(chipColor.r, chipColor.g, chipColor.b, 0.13)
+                                border.width: Style.spacing.hairline; border.color: Qt.rgba(chipColor.r, chipColor.g, chipColor.b, 0.22)
                                 Row {
-                                  anchors.fill: parent; anchors.leftMargin: Style.space(5); anchors.rightMargin: Style.space(4); spacing: Style.space(4)
-                                  Rectangle { width: Style.space(2); height: Style.space(10); radius: 1; anchors.verticalCenter: parent.verticalCenter; color: chipColor }
+                                  anchors.fill: parent; anchors.leftMargin: Style.space(6); anchors.rightMargin: Style.space(6); spacing: Style.space(6)
+                                  Rectangle { width: Style.space(2); height: Style.space(12); radius: 1; anchors.verticalCenter: parent.verticalCenter; color: chipColor }
                                   Text {
-                                    visible: !modelData.allDay
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    text: timeStart(modelData)
-                                    color: Qt.darker(root.contentForeground, 1.5); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption - 1
+                                    width: Style.space(44); anchors.verticalCenter: parent.verticalCenter
+                                    text: modelData.allDay ? "all day" : timeStart(modelData)
+                                    color: Qt.darker(root.contentForeground,1.45); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption - 1; elide: Text.ElideRight
                                   }
                                   Text {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: Math.max(0, parent.width - 2 - Style.space(4) - (modelData.allDay ? 0 : 32) - Style.space(8))
-                                    text: modelData.title; color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight
+                                    width: Math.max(0, parent.width - 2 - Style.space(6) - 44 - Style.space(6) - Style.space(12))
+                                    text: modelData.title; color: root.contentForeground; font.family: root.contentFontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight
                                   }
+                                  Text { anchors.verticalCenter: parent.verticalCenter; text: "↗"; color: Qt.darker(root.contentForeground,1.7); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption }
                                 }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: openEventLink(modelData) }
                               }
                             }
                             Rectangle {
                               visible: evs.length > 3
-                              width: parent.width; height: Style.space(16); radius: Style.cornerRadius
+                              width: parent.width; height: Style.space(18); radius: Style.cornerRadius
                               color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.06)
-                              Text { anchors.centerIn: parent; text: "+" + (evs.length-3) + " more"; color: Qt.darker(root.contentForeground,1.6); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.italic: true }
+                              Text { anchors.centerIn: parent; text: "+" + (evs.length-3) + " more on " + weekDayShort(key); color: Qt.darker(root.contentForeground,1.6); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.italic: true }
                             }
                             Text {
                               visible: evs.length === 0
-                              width: parent.width; horizontalAlignment: Text.AlignHCenter
-                              text: "—  Free  —"; color: Qt.darker(root.contentForeground,2.1); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.italic: true; topPadding: Style.space(4)
+                              width: parent.width
+                              text: "— Free —"; color: Qt.darker(root.contentForeground,2.0); font.family: root.contentFontFamily; font.pixelSize: Style.font.caption; font.italic: true; topPadding: Style.space(2)
                             }
                           }
                         }
-                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectDay(key) }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectDay(key); z: -1 }
                       }
                     }
                   }
@@ -1068,6 +1077,13 @@ Panel {
     var d=new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10))
     return Qt.formatDate(d, "ddd").toUpperCase()
   }
+  function weekMonthShort(key){
+    var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key))
+    if(!m) return ""
+    var d=new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10))
+    return Qt.formatDate(d, "MMM")
+  }
+  function relativeLabel(key){ return Model.relativeDayLabel(key, root.todayKey) }
   function weekDayLabel(key){
     var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key))
     if(!m) return key
