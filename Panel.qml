@@ -246,25 +246,31 @@ Panel {
   }
   function commitNewEventForm() {
     var title = String(eventTitleField.text).trim()
-    if (!title) return
+    if (!title) { console.warn("parm.clock: empty title, abort"); return }
     var date = String(eventDateField.text).trim() || root.selectedKey
     var start = String(eventStartField.text).trim()
     var end = String(eventEndField.text).trim()
     var loc = String(eventLocationField.text).trim()
+    console.log("parm.clock commitNewEventForm", JSON.stringify({title:title, date:date, start:start, end:end, loc:loc, meet:root.eventMeet, cal:root.primaryCalendarId}))
     root.newEventForm(title, date, start, end, loc, root.eventMeet)
     root.editingNewEvent = false
     eventTitleField.text = ""; eventDateField.text=""; eventStartField.text=""; eventEndField.text=""; eventLocationField.text=""
     root.eventMeet = false
   }
   function commitNewTask() {
-    root.newTask(String(taskTitleField.text).trim(), String(taskDueField.text).trim())
+    var t = String(taskTitleField.text).trim()
+    var d = String(taskDueField.text).trim()
+    console.log("parm.clock commitNewTask", JSON.stringify({title:t, due:d, list:root.primaryTasklistId}))
+    if (!t) { console.warn("parm.clock: empty task title"); return }
+    root.newTask(t, d)
     root.editingNewTask = false
     taskTitleField.text = ""; taskDueField.text = ""
   }
   function runMutate(args) {
-    if (mutateProc.running) return
+    if (mutateProc.running) { console.warn("parm.clock runMutate blocked, already running", JSON.stringify(args)); return }
     mutateOutput = ""
     var cmd = ["python3", root.mutatePath].concat(args)
+    console.log("parm.clock runMutate", JSON.stringify(cmd))
     mutateProc.command = cmd
     mutateProc.running = true
   }
