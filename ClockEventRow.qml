@@ -39,8 +39,10 @@ Row {
     anchors.verticalCenter: parent.verticalCenter
     width: Math.max(0, parent.width - row.timeWidth - 3 - 8 * 4 - 28)
     spacing: 1
-    Text { width: parent.width; text: row.ev.title; color: row.foreground; font.family: row.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight; font.bold: true }
-    Text { visible: (row.ev.location || "") !== ""; width: parent.width; text: row.ev.location; color: Qt.darker(row.foreground, 1.5); font.family: row.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+    // Google-controlled strings render as plain text — AutoText would let an
+    // event title carry rich-text markup.
+    Text { width: parent.width; text: row.ev.title; textFormat: Text.PlainText; color: row.foreground; font.family: row.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight; font.bold: true }
+    Text { visible: (row.ev.location || "") !== ""; width: parent.width; text: row.ev.location; textFormat: Text.PlainText; color: Qt.darker(row.foreground, 1.5); font.family: row.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
   }
 
   Text {
@@ -48,6 +50,7 @@ Row {
     anchors.verticalCenter: parent.verticalCenter
     width: Math.max(0, parent.width - row.timeWidth - 3 - 8 * 3 - 28)
     text: row.dateSuffix !== "" ? row.ev.title + " · " + row.dateSuffix : row.ev.title
+    textFormat: Text.PlainText
     color: row.foreground
     font.family: row.fontFamily
     font.pixelSize: Style.font.bodySmall

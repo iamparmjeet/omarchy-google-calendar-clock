@@ -136,12 +136,12 @@ There is no hardcoded IST. Here's how it works:
 
 | Layer | What it does | Code |
 |---|---|---|
-| **Setup auto-detection** | `scripts/setup.sh:write_config()` reads `/etc/timezone` then `/etc/localtime → zoneinfo` (e.g. `America/New_York`, `America/Los_Angeles`). If you pass `--timezone` that wins. Otherwise the detected IANA zone is written to `~/.config/parm.clock/config.json`. | `scripts/setup.sh:124-133` |
-| **Fallback without setup** | `sync/config.py:_detect_system_timezone()` mirrors the same detection so a marketplace install that skips `setup.sh` still gets the correct local zone instead of a hardcoded `Asia/Kolkata`. | `sync/config.py:14-43` |
-| **Sync window** | `sync/sync.py:compute_window()` builds `timeMin`/`timeMax` from `today` in `ZoneInfo(timezone)` (local days, not UTC days). | `sync/sync.py:58-69` |
-| **Event normalization** | `sync/schema.py:normalize_event()` converts each Google `dateTime` (RFC3339 with offset) to the local `dateKey` (`YYYY-MM-DD`) via `dt.astimezone(ZoneInfo(timezone))`. All-day events use the date directly. | `sync/schema.py:231-279` |
-| **Display** | `Panel.qml:24` and `Model.js:98-99` use `new Date()` / `getFullYear() getMonth() getDate()` — the *system's* local clock. `dateKey` comparisons are string `YYYY-MM-DD` matches, so no arithmetic drift. | `Panel.qml:24`, `Model.js:92-99` |
-| **Never hand-rolled** | All conversions use Python `zoneinfo` (no manual offset math), per `AGENTS.md` hard rule. | `sync/sync.py:32`, `sync/schema.py:260` |
+| **Setup auto-detection** | `scripts/setup.sh:write_config()` reads `/etc/timezone` then `/etc/localtime → zoneinfo` (e.g. `America/New_York`, `America/Los_Angeles`). If you pass `--timezone` that wins. Otherwise the detected IANA zone is written to `~/.config/parm.clock/config.json`. | `scripts/setup.sh` |
+| **Fallback without setup** | `sync/config.py:_detect_system_timezone()` mirrors the same detection so a marketplace install that skips `setup.sh` still gets the correct local zone instead of a hardcoded fallback (UTC if detection fails). | `sync/config.py` |
+| **Sync window** | `sync/sync.py:compute_window()` builds `timeMin`/`timeMax` from `today` in `ZoneInfo(timezone)` (local days, not UTC days). | `sync/sync.py` |
+| **Event normalization** | `sync/schema.py:normalize_event()` converts each Google `dateTime` (RFC3339 with offset) to the local `dateKey` (`YYYY-MM-DD`) via `dt.astimezone(ZoneInfo(timezone))`. All-day events use the date directly. | `sync/schema.py` |
+| **Display** | `Panel.qml`/`Model.js` use `new Date()` / `getFullYear() getMonth() getDate()` — the *system's* local clock. `dateKey` comparisons are string `YYYY-MM-DD` matches, so no arithmetic drift. | `Panel.qml`, `Model.js` |
+| **Never hand-rolled** | All conversions use Python `zoneinfo` (no manual offset math). | `sync/sync.py`, `sync/schema.py` |
 
 **Practical result:**
 
@@ -195,7 +195,7 @@ This repo already satisfies the [publishing guide](https://omarchyplugins.com/pu
 - [x] **Valid `manifest.json` at the repository root** — `omarchy plugin validate` exits 0. See `manifest.json:2-11` (`schemaVersion`, `id`, `name`, `version`, `author`, `description`, `kinds`, `entryPoints`)
 - [x] **README and LICENSE** — `README.md` (this file) + `LICENSE` (MIT, with attribution for `BarWidget.qml`/`Panel.qml`/`Model.js` derived from `omarchy.clock`)
 - [x] **Safe install and removal** — install via `omarchy plugin add … --enable` or `git clone` + `setup.sh`; removal via `scripts/uninstall.sh` or `omarchy plugin remove parm.clock` (never deletes Google server data; `--purge-data` only removes the local cache)
-- [x] **Preview** (optional, optimized by the marketplace) — screenshots in `docs/screenshots/`
+- [x] **Preview** (optional, optimized by the marketplace) — root `preview.png` (month + week composite) + screenshots in `docs/screenshots/`
 
 **To submit:** open the marketplace intake form with your repo URL, category `Time`, and tags (`calendar`, `google`, `tasks`, `clock`):
 
@@ -256,7 +256,7 @@ omarchy plugin add https://github.com/iamparmjeet/omarchy-google-calendar-clock.
 ~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --dry-run  # preview without side-effects
 ```
 
-`setup.sh` now prompts before installing dependencies and shows the right env (`node`, `npm`, `cargo`, `pacman`, `PATH`); it correctly installs **googleworkspace/cli** via `npm install -g @googleworkspace/cli` (not the wrong pacman `gws` git-workspace helper) and skips `gws auth setup` when already authenticated.
+`setup.sh` now prompts before installing dependencies and shows the right env (`node`, `npm`, `cargo`, `pacman`, `PATH`); it correctly installs **googleworkspace/cli** via `npm install -g @googleworkspace/cli@0.22.5` — pinned, like the cargo fallback — (not the wrong pacman `gws` git-workspace helper) and skips `gws auth setup` when already authenticated.
 
 ---
 

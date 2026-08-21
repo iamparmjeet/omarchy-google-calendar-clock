@@ -40,7 +40,7 @@ Rectangle {
 
     Text { anchors.verticalCenter: parent.verticalCenter; text: row.done ? "[x]" : "[ ]"; color: row.done ? Qt.darker(row.foreground, 1.6) : Style.selectedStateColor(row.foreground, Color.accent); font.family: row.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
 
-    Text { anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - 120); text: row.task.title; color: row.done ? Qt.darker(row.foreground, 1.6) : row.foreground; font.family: row.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight; font.strikeout: row.done }
+    Text { anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - 120); text: row.task.title; textFormat: Text.PlainText; color: row.done ? Qt.darker(row.foreground, 1.6) : row.foreground; font.family: row.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight; font.strikeout: row.done }
 
     Text { anchors.verticalCenter: parent.verticalCenter; text: Model.taskDueDate(row.task) || "no due"; color: Qt.darker(row.foreground, 1.5); font.family: row.fontFamily; font.pixelSize: Style.font.caption }
 

@@ -72,7 +72,7 @@ Column {
           Button { id: addButton; text: "Add"; foreground: form.foreground; fontFamily: form.fontFamily; onClicked: form.commit() }
         }
       }
-      Text { visible: form.errorText !== ""; width: parent.width; text: form.errorText; color: Color.urgent; font.family: form.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; elide: Text.ElideRight }
+      Text { visible: form.errorText !== ""; width: parent.width; text: form.errorText; textFormat: Text.PlainText; color: Color.urgent; font.family: form.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; elide: Text.ElideRight }
     }
   }
 }

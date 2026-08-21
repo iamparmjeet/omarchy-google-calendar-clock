@@ -1,6 +1,6 @@
 """Thin wrapper around the installed gws CLI.
 
-Rules (from AGENTS.md): never guess gws args — this module only uses the
+Rules: never guess gws args — this module only uses the
 invocation shapes verified against `gws schema` and `gws --help`:
 
 - Invocation: ``gws <service> <resource> <method> --params '{json}' [--json '{json}']``

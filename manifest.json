@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "parm.clock",
   "name": "Google Calendar Clock",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "parm",
   "description": "Clock with a calendar popup that shows and edits events and tasks from your Google Calendar (gws-powered)",
   "kinds": [

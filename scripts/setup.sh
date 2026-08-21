@@ -108,19 +108,20 @@ install_correct_gws() {
   info "  This is NOT the pacman package 'gws' (git-workspace helper)."
   info "  Source: https://github.com/googleworkspace/cli"
   if $DRY_RUN; then
-    echo "   would run: npm install -g @googleworkspace/cli  (or cargo fallback)"
+    echo "   would run: npm install -g @googleworkspace/cli@0.22.5  (or pinned cargo fallback)"
     return 0
   fi
   # Remove wrong pacman gws if present
   if pacman -Q gws 2>/dev/null | grep -q "Colorful KISS helper"; then
-    warn "Removing wrong pacman package 'gws' (StreakyCobra/git-workspace)…"
+    warn "Removing wrong pacman package 'gws' (StreakingCobra/git-workspace)…"
     sudo pacman -Rns --noconfirm gws 2>/dev/null || true
     hash -r 2>/dev/null || true
   fi
-  # Try npm first (preferred, prebuilt Rust binaries)
+  # Try npm first (preferred, prebuilt Rust binaries). Pinned to v0.22.5 so the
+  # marketplace reviews the exact bytes that run, matching the cargo fallback.
   if command_exists npm; then
-    info "Trying: npm install -g @googleworkspace/cli"
-    if npm install -g @googleworkspace/cli; then
+    info "Trying: npm install -g @googleworkspace/cli@0.22.5"
+    if npm install -g @googleworkspace/cli@0.22.5; then
       hash -r 2>/dev/null || true
       if is_correct_gws; then ok "gws installed via npm."; return 0; fi
       warn "npm install succeeded but gws still not correct — trying fallback."
@@ -138,7 +139,7 @@ install_correct_gws() {
       if is_correct_gws; then ok "gws installed via cargo."; return 0; fi
     fi
   fi
-  die "gws install failed. Install manually: npm install -g @googleworkspace/cli  OR  cargo install --git https://github.com/googleworkspace/cli --rev 705fb0ecac6f4249679958f6325b809b63fdde17 --locked  OR  download from https://github.com/googleworkspace/cli/releases/tag/v0.22.5  and ensure 'gws auth --help' works, then re-run."
+  die "gws install failed. Install manually: npm install -g @googleworkspace/cli@0.22.5  OR  cargo install --git https://github.com/googleworkspace/cli --rev 705fb0ecac6f4249679958f6325b809b63fdde17 --locked  OR  download from https://github.com/googleworkspace/cli/releases/tag/v0.22.5  and ensure 'gws auth --help' works, then re-run."
 }
 
 # ----------------------------------------------------------------- step 1: deps

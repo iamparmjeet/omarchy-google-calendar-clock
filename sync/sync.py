@@ -1,7 +1,7 @@
 """Sync engine for parm.clock — fetch Google Calendar + Tasks and atomically
 write ``~/.local/state/parm.clock/state.json``.
 
-Pipeline (per docs/ARCHITECTURE.md):
+Pipeline:
 
     load+validate config
     -> verify gws exists

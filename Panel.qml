@@ -561,11 +561,12 @@ Panel {
             onChanged: root.persistSettings(values)
           }
 
-          // ---- Sync status footer
+          // ---- Sync status footer (message can carry gws/Google error text)
           Text {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: root.syncStale ? "⚠ " + root.syncLabel : "✓ " + root.syncLabel
+            textFormat: Text.PlainText
             color: root.syncStale ? Color.urgent : Qt.darker(root.contentForeground, 1.8)
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.caption

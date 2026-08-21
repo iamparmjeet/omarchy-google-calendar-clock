@@ -94,7 +94,7 @@ Column {
         width: parent.width; spacing: Style.space(8)
         Button { text: "Add"; foreground: form.foreground; fontFamily: form.fontFamily; onClicked: form.commit() }
         Button { text: "Cancel"; foreground: form.foreground; fontFamily: form.fontFamily; onClicked: form.cancelled() }
-        Text { visible: form.errorText !== ""; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - Style.space(140)); text: form.errorText; color: Color.urgent; font.family: form.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; elide: Text.ElideRight }
+        Text { visible: form.errorText !== ""; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - Style.space(140)); text: form.errorText; textFormat: Text.PlainText; color: Color.urgent; font.family: form.fontFamily; font.pixelSize: Style.font.caption; wrapMode: Text.WordWrap; elide: Text.ElideRight }
       }
     }
   }

@@ -310,10 +310,9 @@ function stepMonth(year, month, delta) {
 }
 
 // ---- Calendar state model (provider-independent). These functions read the
-//      normalized v1 state document produced by sync/sync.py (see
-//      docs/ARCHITECTURE.md) and answer the questions the QML asks. They never
-//      touch gws, Google, or the filesystem — pure functions only, so they are
-//      unit-testable under node.
+//      normalized v1 state document produced by sync/sync.py and answer the
+//      questions the QML asks. They never touch gws, Google, or the
+//      filesystem — pure functions only, so they are unit-testable under node.
 
 // Index the state's events into { dateKey: [event, ...] }, expanding all-day
 // and multi-day events across every day they span. dateKey is already local.

@@ -136,7 +136,9 @@ Column {
                   Text {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.max(0, parent.width - 2 - Style.space(6) - 44 - Style.space(6) - Style.space(12))
-                    text: chip.modelData.title; color: view.foreground; font.family: view.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight
+                    text: chip.modelData.title
+                    textFormat: Text.PlainText
+                    color: view.foreground; font.family: view.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight
                   }
                   Text { anchors.verticalCenter: parent.verticalCenter; text: "↗"; color: Qt.darker(view.foreground, 1.7); font.family: view.fontFamily; font.pixelSize: Style.font.caption }
                 }

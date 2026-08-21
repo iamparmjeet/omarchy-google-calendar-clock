@@ -98,7 +98,7 @@ Rectangle {
           required property var modelData
           width: parent.width; spacing: Style.space(8)
           Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.status === "completed" ? "[x]" : "[ ]"; color: modelData.status === "completed" ? Qt.darker(card.foreground, 1.6) : Style.selectedStateColor(card.foreground, Color.accent); font.family: card.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
-          Text { anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - 32 - 70); text: modelData.title; color: modelData.status === "completed" ? Qt.darker(card.foreground, 1.6) : card.foreground; font.family: card.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight; font.strikeout: modelData.status === "completed" }
+          Text { anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - 32 - 70); text: modelData.title; textFormat: Text.PlainText; color: modelData.status === "completed" ? Qt.darker(card.foreground, 1.6) : card.foreground; font.family: card.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight; font.strikeout: modelData.status === "completed" }
           Text { anchors.verticalCenter: parent.verticalCenter; text: Model.taskDueDate(modelData) || "no due"; color: Qt.darker(card.foreground, 1.4); font.family: card.fontFamily; font.pixelSize: Style.font.caption }
         }
       }
