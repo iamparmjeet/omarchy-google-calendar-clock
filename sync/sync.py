@@ -39,6 +39,13 @@ _TMP_COUNTER = count()
 MAX_STATE_EVENTS = 10000
 MAX_STATE_TASKS = 10000
 
+# Hard ceiling on the serialized state.json. Field caps bound each record and
+# the item caps bound record counts, but together they still only bound the
+# document asymptotically — this byte ceiling is the guarantee the QML reader
+# relies on (Model.js refuses anything larger), so the writer must never emit
+# a document past it. Overflow drops the latest window-ordered entries first.
+MAX_STATE_BYTES = 4 * 1024 * 1024
+
 # Allow running both as ``python3 sync/sync.py`` (systemd) and as a package
 # module (``python3 -m sync.sync`` or tests importing ``sync.sync``).
 if __package__ in (None, ""):
@@ -124,6 +131,41 @@ def _cap(items: list[dict], limit: int, what: str) -> list[dict]:
     return items[:limit]
 
 
+def _serialize_state(state: dict) -> str:
+    return json.dumps(state, indent=2, ensure_ascii=False) + "\n"
+
+
+def fit_state_bytes(state: dict, max_bytes: int = MAX_STATE_BYTES) -> Optional[str]:
+    """Serialize ``state``, dropping latest window-ordered entries until the
+    document fits ``max_bytes``.
+
+    Returns the serialized document, or ``None`` if it cannot fit even with
+    both lists empty (only possible with a caller-built state whose metadata
+    alone exceeds the ceiling — never the case for states built here, since
+    field caps bound every metadata string).
+    """
+    serialized = _serialize_state(state)
+    if len(serialized.encode("utf-8")) <= max_bytes:
+        return serialized
+    dropped = 0
+    while state["events"] or state["tasks"]:
+        if state["tasks"]:
+            state["tasks"].pop()
+        else:
+            state["events"].pop()
+        dropped += 1
+        # Re-serialize only every 256 drops: fitting is not exact-fit, it just
+        # needs to land under the ceiling, and serializing per-drop on a
+        # 10k-item list is O(n^2) in the worst case.
+        if dropped % 256 == 0 or not (state["events"] or state["tasks"]):
+            serialized = _serialize_state(state)
+            if len(serialized.encode("utf-8")) <= max_bytes:
+                if dropped:
+                    print(f"warning: state.json exceeded {max_bytes} bytes; dropped {dropped} latest entries", file=sys.stderr)
+                return serialized
+    return None
+
+
 def atomic_write(path: Path, data: str) -> None:
     """Write ``data`` to ``path`` atomically (tmp -> fsync -> rename).
 
@@ -184,15 +226,15 @@ def build_state(
         "calendars": [
             {
                 "id": c.get("id", ""),
-                "name": c.get("summary") or c.get("summaryOverride") or c.get("name") or c.get("id", ""),
-                "color": c.get("backgroundColor") or c.get("color") or "",
+                "name": (c.get("summary") or c.get("summaryOverride") or c.get("name") or c.get("id", ""))[:512],
+                "color": (c.get("backgroundColor") or c.get("color") or "")[:32],
                 "visible": True,
                 "primary": bool(c.get("primary")),
             }
             for c in calendars
         ],
         "events": events,
-        "tasklists": [{"id": t.get("id", ""), "title": t.get("title") or ""} for t in tasklists],
+        "tasklists": [{"id": t.get("id", ""), "title": (t.get("title") or "")[:512]} for t in tasklists],
         "tasks": tasks,
         "syncStatus": {"state": sync_state, "message": message, "lastOk": last_ok},
     }
@@ -358,7 +400,12 @@ def run_sync(
             _preserve_or_emit_failure(target, cfg, "error", "invalid state: " + "; ".join(errors))
             return 3
 
-        atomic_write(target, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+        serialized = fit_state_bytes(state)
+        if serialized is None:
+            _preserve_or_emit_failure(target, cfg, "error", f"state cannot fit under {MAX_STATE_BYTES} bytes")
+            return 3
+
+        atomic_write(target, serialized)
         return 0
 
     except gws_adapter.AuthError as e:

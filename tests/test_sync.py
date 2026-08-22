@@ -290,5 +290,86 @@ class TestSyncPipeline(unittest.TestCase):
         self.assertEqual(validate_state(state), [])
 
 
+class TestStateByteCeiling(unittest.TestCase):
+    def _state(self, n_events, n_tasks, title="e"):
+        events = [{"id": f"e{i}", "calendarId": "c", "title": title,
+                   "start": "2026-08-20T09:00:00Z", "end": "2026-08-20T10:00:00Z",
+                   "allDay": False, "dateKey": "2026-08-20"} for i in range(n_events)]
+        tasks = [{"id": f"t{i}", "listId": "l", "title": title,
+                  "status": "needsAction"} for i in range(n_tasks)]
+        return sync.build_state([{"id": "c", "summary": "Cal"}], events,
+                                [{"id": "l", "title": "List"}], tasks,
+                                "UTC", "ok", "", "2026-08-20T00:00:00Z")
+
+    def test_under_ceiling_untouched(self):
+        state = self._state(10, 10)
+        before = json.dumps(state)
+        out = sync.fit_state_bytes(state)
+        self.assertIsNotNone(out)
+        self.assertEqual(json.loads(out), json.loads(before))
+        self.assertLessEqual(len(out.encode()), sync.MAX_STATE_BYTES)
+
+    def test_over_ceiling_drops_latest_until_it_fits(self):
+        # ~350B per event -> 100k events far exceeds 4 MiB.
+        state = self._state(100000, 0)
+        out = sync.fit_state_bytes(state)
+        self.assertIsNotNone(out)
+        self.assertLessEqual(len(out.encode()), sync.MAX_STATE_BYTES)
+        self.assertLess(len(state["events"]), 100000)
+        # Earliest window-ordered entries are the ones kept.
+        self.assertEqual(state["events"][0]["id"], "e0")
+        self.assertEqual(state["events"][-1]["id"], f"e{len(state['events']) - 1}")
+        self.assertEqual(validate_state(json.loads(out)), [])
+
+    def test_tasks_dropped_after_events(self):
+        state = self._state(20000, 20000)
+        out = sync.fit_state_bytes(state)
+        self.assertIsNotNone(out)
+        self.assertLessEqual(len(out.encode()), sync.MAX_STATE_BYTES)
+
+    def test_unfittable_returns_none(self):
+        state = self._state(10, 10, title="x" * 4096)
+        # A ceiling smaller than even the metadata makes the state unfittable.
+        self.assertIsNone(sync.fit_state_bytes(state, max_bytes=64))
+
+    def test_full_sync_output_respects_ceiling(self):
+        # Integration: the written file itself must stay under the ceiling.
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            fake = _write_fake_gws(Path(td))
+            state_path = Path(td) / "state.json"
+            os.environ["FAKE_GWS_AUTH"] = "ok"
+            cfg = {"timezone": "Asia/Kolkata", "pastDays": 7, "futureDays": 60,
+                   "gwsPath": str(fake), "hiddenCalendars": [], "tasklistIds": []}
+            code = sync.run_sync(cfg, gws_path=str(fake), state_path=state_path)
+            self.assertEqual(code, 0)
+            self.assertLessEqual(state_path.stat().st_size, sync.MAX_STATE_BYTES)
+
+
+class TestFieldCaps(unittest.TestCase):
+    def test_event_free_text_fields_clipped(self):
+        from sync.schema import normalize_event, MAX_TITLE_CHARS, MAX_NOTES_CHARS, MAX_URL_CHARS
+        raw = {
+            "id": "big", "summary": "T" * 100000,
+            "description": "D" * 100000, "location": "L" * 100000,
+            "htmlLink": "https://" + "h" * 100000,
+            "hangoutLink": "https://" + "m" * 100000,
+            "start": {"dateTime": "2026-08-20T09:00:00Z"},
+            "end": {"dateTime": "2026-08-20T10:00:00Z"},
+        }
+        ev = normalize_event(raw, "cal", "UTC")
+        self.assertEqual(len(ev["title"]), MAX_TITLE_CHARS)
+        self.assertEqual(len(ev["description"]), MAX_NOTES_CHARS)
+        self.assertEqual(len(ev["location"]), MAX_TITLE_CHARS)
+        self.assertEqual(len(ev["htmlLink"]), MAX_URL_CHARS)
+        self.assertEqual(len(ev["meetUrl"]), MAX_URL_CHARS)
+
+    def test_task_notes_and_title_clipped(self):
+        from sync.schema import normalize_task, MAX_TITLE_CHARS, MAX_NOTES_CHARS
+        t = normalize_task({"id": "t", "title": "T" * 100000, "notes": "N" * 100000}, "list")
+        self.assertEqual(len(t["title"]), MAX_TITLE_CHARS)
+        self.assertEqual(len(t["notes"]), MAX_NOTES_CHARS)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -136,6 +136,18 @@ function testParseStateEmpty() {
   assert.deepStrictEqual(s.events, []);
 }
 
+function testParseStateOversizedRefused() {
+  // Documents past the byte ceiling are refused wholesale, not materialized.
+  const pad = "x".repeat(Model.MAX_STATE_CHARS + 1);
+  const oversized = JSON.stringify({ timezone: "UTC", events: [], tasks: [], junk: pad });
+  const s = Model.parseState(oversized);
+  assert.deepStrictEqual(s.events, []);
+  assert.strictEqual(s.syncStatus.state, "never");
+  // Exactly at the ceiling is still accepted.
+  const atCap = Model.parseState(JSON.stringify({ timezone: "UTC" }).padEnd(Model.MAX_STATE_CHARS, " "));
+  assert.strictEqual(atCap.timezone, "UTC");
+}
+
 function testCalendarColor() {
   const cals = [{ id: "primary", color: "#4285F4" }];
   assert.strictEqual(Model.calendarColor(cals, "primary"), "#4285F4");
@@ -337,6 +349,7 @@ const tests = [
   testParseState,
   testParseStateGarbage,
   testParseStateEmpty,
+  testParseStateOversizedRefused,
   testCalendarColor,
   testSyncStatusLabel,
   testParseDateKey,

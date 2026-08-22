@@ -443,9 +443,20 @@ function isStale(syncStatus, now, thresholdMin) {
 
 // Parse the raw text of state.json into a safe state object. Never throws;
 // missing/garbage input yields empty arrays and a "never" sync status.
+// Documents past MAX_STATE_CHARS are refused outright rather than parsed:
+// the sync writer guarantees state.json stays under this ceiling, so a larger
+// file is foreign or corrupt, and materializing it wholesale (what FileView
+// hands us) is exactly what the cap exists to prevent. UTF-8 uses at least
+// one byte per character, so anything the writer emits under its byte
+// ceiling also passes this character ceiling; must stay in sync with
+// MAX_STATE_BYTES in sync/sync.py.
+var MAX_STATE_CHARS = 4 * 1024 * 1024
+
 function parseState(text) {
+  var raw = String(text || "")
+  if (raw.length > MAX_STATE_CHARS) raw = ""
   var s = null
-  try { s = JSON.parse(String(text || "")) } catch (e) { s = null }
+  try { s = JSON.parse(raw) } catch (e) { s = null }
   if (!s || typeof s !== "object") s = {}
   var ss = s.syncStatus
   return {
@@ -747,6 +758,7 @@ if (typeof module !== "undefined") {
     countdown: countdown,
     isStale: isStale,
     parseState: parseState,
+    MAX_STATE_CHARS: MAX_STATE_CHARS,
     calendarColor: calendarColor,
     syncStatusLabel: syncStatusLabel,
     parseDateKey: parseDateKey,

@@ -25,6 +25,21 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 SYNC_STATES = ("ok", "auth", "error", "never")
 TASK_STATUSES = ("needsAction", "completed")
 
+# Per-field length caps applied at normalization. Item-count limits alone do
+# not bound a document: a single event description can carry megabytes. These
+# caps bound every free-text field an event or task contributes to state.json,
+# so the aggregate is a function of item count, not of remote content size.
+MAX_TITLE_CHARS = 512
+MAX_NOTES_CHARS = 4096
+MAX_URL_CHARS = 2048
+
+
+def clip(value: Any, limit: int) -> str:
+    """Coerce to str and truncate to ``limit`` characters."""
+    if not isinstance(value, str):
+        value = "" if value is None else str(value)
+    return value[:limit]
+
 #: Fields required on every normalized event record.
 EVENT_REQUIRED = {"id", "calendarId", "title", "start", "end", "allDay", "dateKey"}
 #: Fields required on every normalized task record.
@@ -268,15 +283,15 @@ def normalize_event(raw: dict, calendar_id: str, timezone: str) -> dict:
     return {
         "id": raw.get("id", ""),
         "calendarId": calendar_id,
-        "title": raw.get("summary") or "",
+        "title": clip(raw.get("summary") or "", MAX_TITLE_CHARS),
         "start": start_raw or "",
         "end": end_raw or "",
         "allDay": all_day,
         "dateKey": dk,
-        "location": raw.get("location") or "",
-        "description": raw.get("description") or "",
-        "htmlLink": raw.get("htmlLink") or "",
-        "meetUrl": _meet_url(raw),
+        "location": clip(raw.get("location") or "", MAX_TITLE_CHARS),
+        "description": clip(raw.get("description") or "", MAX_NOTES_CHARS),
+        "htmlLink": clip(raw.get("htmlLink") or "", MAX_URL_CHARS),
+        "meetUrl": clip(_meet_url(raw), MAX_URL_CHARS),
         "recurring": bool(raw.get("recurringEventId") or raw.get("recurrence")),
     }
 
@@ -308,8 +323,8 @@ def normalize_task(raw: dict, list_id: str) -> dict:
     return {
         "id": raw.get("id", ""),
         "listId": list_id,
-        "title": raw.get("title") or "",
-        "notes": raw.get("notes") or "",
+        "title": clip(raw.get("title") or "", MAX_TITLE_CHARS),
+        "notes": clip(raw.get("notes") or "", MAX_NOTES_CHARS),
         "due": due,
         "status": raw.get("status") or "needsAction",
         "completed": raw.get("completed") or "",
