@@ -28,7 +28,7 @@ Panel {
   readonly property date viewDate: new Date(viewYear, viewMonth, 1)
   readonly property bool viewingCurrentMonth: viewYear === today.getFullYear() && viewMonth === today.getMonth()
 
-  property var state: Model.parseState("")
+  // state is bound to stateFile below (bounded reader).
   readonly property string statePath: Quickshell.env("HOME") + "/.local/state/parm.clock/state.json"
   readonly property var eventIdx: Model.eventIndex(state.events)
 
@@ -264,16 +264,14 @@ Panel {
       if (followToday) root.goToToday()
     }
   }
-  FileView {
+  // ClockStateFile keeps FileView from reading the file wholesale — it is
+  // only a change signal; the bounded read happens in a child process that
+  // sizes before it cats.
+  ClockStateFile {
     id: stateFile
     path: root.statePath
-    watchChanges: true
-    atomicWrites: true
-    printErrors: false
-    onLoaded: root.state = Model.parseState(text())
-    onLoadFailed: root.state = Model.parseState("")
-    onFileChanged: reload()
   }
+  property var state: stateFile.state
   Process {
     id: mutateProc
     command: []

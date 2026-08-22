@@ -20,7 +20,7 @@ BarWidget {
   //      state.json produced by sync/sync.py to drive the task badge; it never
   //      touches gws or Google.
   property string statePath: Quickshell.env("HOME") + "/.local/state/parm.clock/state.json"
-  property var state: Model.parseState("")
+  // state is bound to stateFile below (bounded reader).
   readonly property bool showBadge: setting("showTaskBadge", true)
   readonly property string badgeMode: setting("badgeCount", "dueToday")
   readonly property int badgeCount: Model.badgeCount(state.tasks, badgeMode, Model.keyForDate(displayDate))
@@ -130,17 +130,14 @@ BarWidget {
   }
 
   // Watches the synced state file so the badge updates after every sync
-  // without a shell restart.
-  FileView {
+  // without a shell restart. ClockStateFile keeps FileView from reading the
+  // file wholesale — it is only a change signal; the bounded read happens
+  // in a child process that sizes before it cats.
+  ClockStateFile {
     id: stateFile
     path: root.statePath
-    watchChanges: true
-    atomicWrites: true
-    printErrors: false
-    onLoaded: root.state = Model.parseState(text())
-    onLoadFailed: root.state = Model.parseState("")
-    onFileChanged: reload()
   }
+  property var state: stateFile.state
 
   Loader {
     id: panelLoader
