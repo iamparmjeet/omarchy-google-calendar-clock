@@ -25,7 +25,7 @@ import json
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from itertools import count
 from pathlib import Path
 from typing import Optional
@@ -315,7 +315,6 @@ def run_sync(
             tasklists = filter_tasklists(raw_tasklists, cfg)
 
         calendar_ids = [c["id"] for c in calendars]
-        tasklist_ids = [t["id"] for t in tasklists]
 
         time_min, time_max = compute_window(cfg, timezone)
 

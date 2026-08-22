@@ -99,7 +99,7 @@ def _run_capped(cmd: list[str], *, timeout: float) -> tuple[int, str, str]:
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
     except FileNotFoundError:
-        raise GwsNotFound(f"gws not found at {cmd[0]}")
+        raise GwsNotFound(f"gws not found at {cmd[0]}") from None
 
     # bufsize=0 so each read() is one os.read: it returns whatever is ready
     # (select already said the fd is readable) and never blocks for more.
@@ -175,7 +175,7 @@ def run(
     try:
         proc_returncode, stdout_raw, stderr_raw = _run_capped(cmd, timeout=timeout)
     except subprocess.TimeoutExpired:
-        raise GwsError(f"gws {service} {resource} {method} timed out", "timeout")
+        raise GwsError(f"gws {service} {resource} {method} timed out", "timeout") from None
 
     stdout = stdout_raw.strip()
     stderr = stderr_raw.strip()
@@ -199,12 +199,12 @@ def run(
             # nothing) is fine — return an empty dict rather than erroring.
             if not _looks_like_json(stdout):
                 return {}
-            raise GwsError("gws returned non-JSON output", "parse")
+            raise GwsError("gws returned non-JSON output", "parse") from None
 
     # Non-zero, non-auth exit.
     err = _extract_error(stdout) or _extract_error(stderr)
     reason = err.get("reason")
-    message = err.get("message") or f"gws exited with code {proc.returncode}"
+    message = err.get("message") or f"gws exited with code {proc_returncode}"
 
     if reason == "authError" or err.get("code") == 401:
         raise AuthError(message, err.get("code"))

@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from zoneinfo import ZoneInfoNotFoundError
 
 from .schema import SYNC_STATES  # noqa: F401  (re-export convenience)

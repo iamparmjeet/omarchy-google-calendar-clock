@@ -4,7 +4,6 @@ The fake script asserts the exact command-line shape (never guessing) and
 returns canned JSON for each classification. No network, no real credentials.
 """
 
-import json
 import os
 import stat
 import sys

@@ -23,13 +23,11 @@ codes mirror gws/sync: 0 ok, 2 auth, 3 api, 4 usage, 5 io.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 import time
 import uuid
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 _THIS = Path(__file__).resolve().parent
 _ROOT = _THIS.parent
