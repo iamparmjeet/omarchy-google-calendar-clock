@@ -7,10 +7,14 @@ import "Model.js" as Model
 // FileView is used only as a change signal: preload stays false and text()/
 // data() are never called, so FileView — whose read path has no size limit —
 // never materializes state.json in the long-lived shell. The actual read
-// happens in a short-lived child process that sizes the file first and cats
-// it only when under Model.MAX_STATE_CHARS (kept in sync with the writer's
-// MAX_STATE_BYTES in sync/sync.py); the StdioCollector therefore retains at
-// most a ceiling-sized document. parseState's own MAX_STATE_CHARS refusal
+// happens in a short-lived child process whose read is bounded in a single
+// open: head -c stops after MAX_STATE_CHARS + 1 bytes (kept in sync with the
+// writer's MAX_STATE_BYTES in sync/sync.py), so no file-replacement race
+// between a size check and a read can make the child emit more; the
+// StdioCollector therefore never retains more than a ceiling-plus-one read
+// plus, if the read itself errors partway, a trailing sentinel line, and
+// anything over the ceiling is refused on exit (measured on the raw emitted
+// bytes, before any trimming). parseState's own MAX_STATE_CHARS refusal
 // remains as defense in depth.
 QtObject {
   id: root
@@ -33,9 +37,8 @@ QtObject {
     if (reader.running) return // re-read from onExited when this one settles
     reader.command = [
       "sh", "-c",
-      'n=$(wc -c < "$1" 2>/dev/null) || { printf "%s\\n" __PARMCLOCK_STATE_UNREADABLE__; exit 0; }; ' +
-      'if [ "$n" -gt "$2" ]; then printf "%s\\n" __PARMCLOCK_STATE_TOO_LARGE__; ' +
-      'else cat -- "$1"; fi',
+      'head -c "$(( $2 + 1 ))" -- "$1" 2>/dev/null || ' +
+      'printf "%s\\n" __PARMCLOCK_STATE_UNREADABLE__',
       "parm.clock", root.path, String(Model.MAX_STATE_CHARS)
     ]
     root.startedGeneration = root.generation
@@ -60,8 +63,9 @@ QtObject {
         root.refresh()
         return
       }
-      var out = String(readOut.text || "").trim()
-      if (out === "__PARMCLOCK_STATE_TOO_LARGE__" || out === "__PARMCLOCK_STATE_UNREADABLE__") {
+      var raw = String(readOut.text || "")
+      var out = raw.trim()
+      if (raw.length > Model.MAX_STATE_CHARS || out === "__PARMCLOCK_STATE_UNREADABLE__") {
         console.warn("parm.clock: refusing state.json (over size ceiling or unreadable):", root.path)
         root.state = Model.parseState("")
         return
