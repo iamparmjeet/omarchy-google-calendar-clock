@@ -34,6 +34,11 @@ from zoneinfo import ZoneInfo
 # Unique-per-process counter for atomic_write temp names (see atomic_write).
 _TMP_COUNTER = count()
 
+# Aggregate caps for state.json: even across many calendars/tasklists the
+# document stays bounded; overflow keeps the earliest window-ordered entries.
+MAX_STATE_EVENTS = 10000
+MAX_STATE_TASKS = 10000
+
 # Allow running both as ``python3 sync/sync.py`` (systemd) and as a package
 # module (``python3 -m sync.sync`` or tests importing ``sync.sync``).
 if __package__ in (None, ""):
@@ -111,17 +116,34 @@ def sort_tasks(tasks: list[dict]) -> list[dict]:
     return sorted(tasks, key=key)
 
 
+def _cap(items: list[dict], limit: int, what: str) -> list[dict]:
+    """Bound an aggregate list, keeping the earliest (already sorted) entries."""
+    if len(items) <= limit:
+        return items
+    print(f"warning: {len(items)} {what} exceeded cap {limit}; keeping earliest {limit}", file=sys.stderr)
+    return items[:limit]
+
+
 def atomic_write(path: Path, data: str) -> None:
     """Write ``data`` to ``path`` atomically (tmp -> fsync -> rename).
+
+    The cache holds calendar/task contents, so the directory is kept 0700 and
+    the file 0600 — other local accounts must not be able to read it. Modes
+    are re-asserted on every write, so a 0755/0644 cache left by an older
+    version is tightened on the first sync after upgrade.
 
     The temp file is unique per writer (pid + counter) so that two concurrent
     syncs — e.g. the systemd timer firing while a post-write refresh is still
     writing — never share a tmp path and interleave into a corrupt rename.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
     tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{next(_TMP_COUNTER)}")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        # fchmod re-asserts 0600 even if a stale tmp (0644) already existed.
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
@@ -264,10 +286,12 @@ def run_sync(
                 # empty "ok" state over the last-good state. Re-raise so the
                 # outer handler preserves last-good.
                 raise
-            except gws_adapter.GwsError:
-                # One calendar failing transiently (timeout, discovery) should
-                # not abort the whole sync; that calendar is skipped.
-                pass
+            except gws_adapter.GwsError as e:
+                # One calendar failing transiently (timeout, discovery, or a
+                # response over the adapter's byte/page/item caps) should not
+                # abort the whole sync; that calendar is skipped, with a
+                # stderr note for the journal.
+                print(f"warning: calendar {cal_id} skipped: {e}", file=sys.stderr)
             return out
 
         def _fetch_tasks(tl_id: str) -> list[dict]:
@@ -295,8 +319,8 @@ def run_sync(
                     out.append(normalized)
             except (gws_adapter.AuthError, gws_adapter.ApiError):
                 raise
-            except gws_adapter.GwsError:
-                pass
+            except gws_adapter.GwsError as e:
+                print(f"warning: tasklist {tl_id} skipped: {e}", file=sys.stderr)
             return out
 
         with ThreadPoolExecutor(max_workers=6) as pool:
@@ -312,8 +336,8 @@ def run_sync(
                 else:
                     tasks.extend(fut.result())
 
-        events = sort_events(dedupe(events))
-        tasks = sort_tasks(tasks)
+        events = _cap(sort_events(dedupe(events)), MAX_STATE_EVENTS, "events")
+        tasks = _cap(sort_tasks(tasks), MAX_STATE_TASKS, "tasks")
 
         state = build_state(
             calendars, events, tasklists, tasks,
@@ -335,14 +359,17 @@ def run_sync(
     except gws_adapter.ApiError as e:
         _preserve_or_emit_failure(target, cfg, "error", str(e))
         return 3
-    except gws_adapter.GwsError as e:
-        # Validation/discovery/timeout/internal gws failures. Not auth and not
-        # a Google API rejection, but still not success — preserve last-good.
-        _preserve_or_emit_failure(target, cfg, "error", str(e))
-        return 3
     except gws_adapter.GwsNotFound as e:
+        # Must precede the GwsError clause: GwsNotFound subclasses GwsError,
+        # and a missing binary raised inside this try must map to exit 5.
         _preserve_or_emit_failure(target, cfg, "error", str(e))
         return 5
+    except gws_adapter.GwsError as e:
+        # Validation/discovery/timeout/internal/limit gws failures. Not auth
+        # and not a Google API rejection, but still not success — preserve
+        # last-good.
+        _preserve_or_emit_failure(target, cfg, "error", str(e))
+        return 3
     except OSError as e:
         _preserve_or_emit_failure(target, cfg, "error", f"io error: {e}")
         return 5

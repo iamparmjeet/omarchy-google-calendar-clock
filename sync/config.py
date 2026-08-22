@@ -108,9 +108,23 @@ def validate_config(cfg: dict) -> list[str]:
 
 
 def save_config(cfg: dict, path: Optional[Path] = None) -> None:
-    """Atomically write the config file."""
+    """Atomically write the config file.
+
+    Like the state cache, the config is private: directory 0700, file 0600
+    (re-asserted each write so older 0755/0644 files are tightened).
+    """
     target = Path(path) if path else CONFIG_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(target.parent, 0o700)
     tmp = target.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cfg, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp.replace(target)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(cfg, indent=2, sort_keys=True) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(target)
+    finally:
+        if tmp.exists():
+            tmp.unlink()

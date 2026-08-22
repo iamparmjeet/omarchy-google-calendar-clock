@@ -286,7 +286,11 @@ write_config() {
     return
   fi
   mkdir -p "$CONFIG_DIR"
-  cat > "$CONFIG_FILE" <<EOF
+  chmod 700 "$CONFIG_DIR"
+  # umask 077 in the subshell -> config.json is created 0600 (it names the
+  # user's calendars/tasklists); the chmod also tightens any older 0644 file.
+  ( umask 077
+    cat > "$CONFIG_FILE" <<EOF
 {
   "timezone": "$TIMEZONE",
   "pastDays": 7,
@@ -296,6 +300,8 @@ write_config() {
   "tasklistIds": []
 }
 EOF
+  )
+  chmod 600 "$CONFIG_FILE"
   ok "config written (timezone=$TIMEZONE, gws=$gws_path)"
 }
 

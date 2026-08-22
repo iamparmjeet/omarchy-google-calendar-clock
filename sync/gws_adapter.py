@@ -15,8 +15,11 @@ tokens; we only invoke it and parse its JSON.
 from __future__ import annotations
 
 import json
+import selectors
 import shutil
 import subprocess
+import sys
+import time
 from typing import Any, Optional
 
 # Verified exit codes (gws --help).
@@ -26,6 +29,12 @@ EXIT_AUTH = 2
 EXIT_VALIDATION = 3
 EXIT_DISCOVERY = 4
 EXIT_INTERNAL = 5
+
+# Hard bounds so a runaway or hostile gws/Google response cannot exhaust
+# memory: a byte cap per response, a page and item cap per list call.
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_LIST_PAGES = 20
+MAX_LIST_ITEMS = 5000
 
 
 class GwsError(Exception):
@@ -79,6 +88,60 @@ def _extract_error(raw: str) -> dict:
     return {}
 
 
+def _run_capped(cmd: list[str], *, timeout: float) -> tuple[int, str, str]:
+    """Run ``cmd`` capturing both streams with a hard per-stream byte cap.
+
+    ``subprocess.run(capture_output=True)`` buffers unbounded output. Here a
+    stream past ``MAX_RESPONSE_BYTES`` kills the child and raises GwsError
+    (kind="limit") instead of growing the buffer further.
+    """
+    deadline = time.monotonic() + timeout
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+    except FileNotFoundError:
+        raise GwsNotFound(f"gws not found at {cmd[0]}")
+
+    # bufsize=0 so each read() is one os.read: it returns whatever is ready
+    # (select already said the fd is readable) and never blocks for more.
+    chunks = {proc.stdout: bytearray(), proc.stderr: bytearray()}
+    sel = selectors.DefaultSelector()
+    try:
+        for stream in chunks:
+            sel.register(stream, selectors.EVENT_READ)
+        open_streams = len(chunks)
+        while open_streams:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            for key, _ in sel.select(timeout=remaining):
+                chunk = key.fileobj.read(65536)
+                if not chunk:
+                    sel.unregister(key.fileobj)
+                    open_streams -= 1
+                    continue
+                buf = chunks[key.fileobj]
+                buf.extend(chunk)
+                if len(buf) > MAX_RESPONSE_BYTES:
+                    raise GwsError(
+                        f"gws output exceeded {MAX_RESPONSE_BYTES} bytes (runaway response)",
+                        "limit",
+                    )
+        proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+        return (
+            proc.returncode,
+            chunks[proc.stdout].decode("utf-8", "replace"),
+            chunks[proc.stderr].decode("utf-8", "replace"),
+        )
+    except BaseException:
+        # Any exit path that leaves the child alive must reap it.
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+        raise
+    finally:
+        sel.close()
+
+
 def run(
     service: str,
     resource: str,
@@ -94,7 +157,7 @@ def run(
     Raises:
         AuthError     on exit code 2 or an ``authError`` reason.
         ApiError      on exit code 1 or any other Google error response.
-        GwsError      on validation/discovery/internal failures.
+        GwsError      on validation/discovery/internal/limit failures.
         GwsNotFound   if gws is missing.
     """
     exe = _find_gws(gws_path)
@@ -106,30 +169,23 @@ def run(
         cmd += ["--json", json.dumps(body)]
 
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except FileNotFoundError:
-        raise GwsNotFound(f"gws not found at {exe}")
+        proc_returncode, stdout_raw, stderr_raw = _run_capped(cmd, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise GwsError(f"gws {service} {resource} {method} timed out", "timeout")
 
-    stdout = proc.stdout.strip()
-    stderr = proc.stderr.strip()
+    stdout = stdout_raw.strip()
+    stderr = stderr_raw.strip()
 
     # gws writes JSON to stdout; stderr carries human/log lines (e.g. "Using
     # keyring backend: keyring") plus a duplicated error line on failure. Parse
     # stdout first, falling back to stderr only when stdout is empty.
     payload = stdout or stderr
 
-    if proc.returncode == EXIT_AUTH:
+    if proc_returncode == EXIT_AUTH:
         err = _extract_error(stdout) or _extract_error(stderr)
         raise AuthError(err.get("message") or "gws authentication failed", err.get("code"))
 
-    if proc.returncode == EXIT_OK:
+    if proc_returncode == EXIT_OK:
         if not payload:
             return {}
         try:
@@ -148,9 +204,9 @@ def run(
 
     if reason == "authError" or err.get("code") == 401:
         raise AuthError(message, err.get("code"))
-    if proc.returncode == EXIT_API:
+    if proc_returncode == EXIT_API:
         raise ApiError(message, err.get("code"))
-    raise GwsError(message, "gws", proc.returncode)
+    raise GwsError(message, "gws", proc_returncode)
 
 
 def _looks_like_json(text: str) -> bool:
@@ -169,10 +225,10 @@ def auth_status(gws_path: Optional[str] = None) -> dict:
     unauthenticated — callers must inspect ``auth_method``.
     """
     exe = _find_gws(gws_path)
-    proc = subprocess.run([exe, "auth", "status"], capture_output=True, text=True, timeout=30.0)
-    payload = (proc.stdout or proc.stderr).strip()
-    if proc.returncode != 0:
-        err = _extract_error(proc.stdout) or _extract_error(proc.stderr)
+    returncode, out, err_out = _run_capped([exe, "auth", "status"], timeout=30.0)
+    payload = (out or err_out).strip()
+    if returncode != 0:
+        err = _extract_error(out) or _extract_error(err_out)
         raise AuthError(err.get("message") or "gws auth status failed", err.get("code"))
     if not payload:
         return {}
@@ -180,6 +236,10 @@ def auth_status(gws_path: Optional[str] = None) -> dict:
         return json.loads(payload)
     except ValueError:
         return {}
+
+
+def _warn_truncated(what: str, limit: str) -> None:
+    print(f"warning: {what} exceeded {limit}; results truncated", file=sys.stderr)
 
 
 def _list_all(
@@ -195,11 +255,16 @@ def _list_all(
     All Google list endpoints cap the page size (tasks: 100, events: 2500,
     calendars/tasklists: a few hundred) and hand back a ``nextPageToken``. A
     single un-paged call would silently truncate a large account, so every list
-    helper funnels through here.
+    helper funnels through here. Pagination itself is bounded by
+    ``MAX_LIST_PAGES`` / ``MAX_LIST_ITEMS``: past a cap we stop and keep what
+    we have (with a stderr warning) rather than let a runaway or hostile
+    server grow the aggregate without limit.
     """
     items: list[dict] = []
     page_token: Optional[str] = None
+    pages = 0
     while True:
+        pages += 1
         p = dict(params)
         if page_token:
             p["pageToken"] = page_token
@@ -207,8 +272,14 @@ def _list_all(
         if not isinstance(data, dict):
             return items
         items.extend(data.get("items", []) or [])
+        if len(items) >= MAX_LIST_ITEMS:
+            _warn_truncated(f"{service}.{resource}.list", f"{MAX_LIST_ITEMS} items")
+            return items[:MAX_LIST_ITEMS]
         page_token = data.get("nextPageToken")
         if not page_token:
+            return items
+        if pages >= MAX_LIST_PAGES:
+            _warn_truncated(f"{service}.{resource}.list", f"{MAX_LIST_PAGES} pages")
             return items
 
 

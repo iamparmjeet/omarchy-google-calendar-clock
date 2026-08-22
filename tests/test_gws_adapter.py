@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -47,6 +48,12 @@ if mode == "internal":
     print(json.dumps({"error": {"code": 500, "message": "boom", "reason": "internalError"}}))
     sys.exit(5)
 
+if os.environ.get("FAKE_GWS_HUGE") == "1":
+    # A response far past any sane per-page size. Checked before the
+    # resource branches so any invocation can select it.
+    sys.stdout.write("x" * 65536)
+    sys.exit(0)
+
 if method == "list" and resource == "calendarList":
     print(json.dumps({"items": [{"id": "primary", "summary": "x"}]}))
     sys.exit(0)
@@ -66,6 +73,11 @@ if method == "list" and resource == "tasks":
             print(json.dumps({"items": [{"id": "p1"}], "nextPageToken": "tok2"}))
         else:
             print(json.dumps({"items": [{"id": "p2"}]}))
+        sys.exit(0)
+    if os.environ.get("FAKE_GWS_ENDLESS") == "1":
+        # Two items per page and a pageToken that never clears: pagination
+        # would run forever without the adapter's caps.
+        print(json.dumps({"items": [{"id": "a"}, {"id": "b"}], "nextPageToken": "more"}))
         sys.exit(0)
     print(json.dumps({"items": [{"id": "t1", "title": "todo"}]}))
     sys.exit(0)
@@ -127,6 +139,39 @@ class TestGwsAdapter(unittest.TestCase):
             self.assertEqual([t["id"] for t in tasks], ["p1", "p2"])
         finally:
             os.environ.pop("FAKE_GWS_PAGED", None)
+
+    def test_list_item_cap_truncates(self):
+        # An endless list stops at MAX_LIST_ITEMS and returns a bounded list.
+        os.environ["FAKE_GWS_ENDLESS"] = "1"
+        try:
+            with mock.patch.object(gws_adapter, "MAX_LIST_ITEMS", 3):
+                tasks = gws_adapter.list_tasks("default", gws_path=self._gws())
+            self.assertEqual(len(tasks), 3)
+        finally:
+            os.environ.pop("FAKE_GWS_ENDLESS", None)
+
+    def test_list_page_cap_truncates(self):
+        # Endless pagination stops at MAX_LIST_PAGES even under a high item cap.
+        os.environ["FAKE_GWS_ENDLESS"] = "1"
+        try:
+            with mock.patch.object(gws_adapter, "MAX_LIST_PAGES", 2), \
+                 mock.patch.object(gws_adapter, "MAX_LIST_ITEMS", 10 ** 9):
+                tasks = gws_adapter.list_tasks("default", gws_path=self._gws())
+            self.assertEqual(len(tasks), 4)  # 2 pages x 2 items
+        finally:
+            os.environ.pop("FAKE_GWS_ENDLESS", None)
+
+    def test_run_rejects_oversized_output(self):
+        # A gws response past the byte cap is killed and classified, never
+        # buffered to completion.
+        os.environ["FAKE_GWS_HUGE"] = "1"
+        try:
+            with mock.patch.object(gws_adapter, "MAX_RESPONSE_BYTES", 4096):
+                with self.assertRaises(gws_adapter.GwsError) as ctx:
+                    gws_adapter.run("calendar", "events", "list", gws_path=self._gws())
+            self.assertEqual(ctx.exception.kind, "limit")
+        finally:
+            os.environ.pop("FAKE_GWS_HUGE", None)
 
     def test_auth_error_classified(self):
         # Use a resource/method that forwards to the failure branch.

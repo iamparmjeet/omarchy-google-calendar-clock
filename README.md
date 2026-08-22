@@ -46,8 +46,8 @@ Google (Calendar + Tasks)  ← OAuth (gws owns tokens)
         │
         ▼
   ~/.local/state/parm.clock/state.json   ← single source of truth
-        │
-        ▼
+        │                                    (dir 0700, file 0600 — private;
+        ▼                                     config.json likewise)
   Model.js + BarWidget.qml + Panel.qml + Clock*.qml  (QML reads state.json only)
 ```
 

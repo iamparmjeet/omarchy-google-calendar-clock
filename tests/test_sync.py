@@ -183,6 +183,35 @@ class TestSyncPipeline(unittest.TestCase):
         leftovers = list(self.state_path.parent.glob("*.tmp"))
         self.assertEqual(leftovers, [])
 
+    def test_atomic_write_private_modes(self):
+        # The cache holds calendar/task contents: dir 0700, file 0600.
+        sync.atomic_write(self.state_path, '{"x": 1}\n')
+        dir_mode = stat.S_IMODE(self.state_path.parent.stat().st_mode)
+        file_mode = stat.S_IMODE(self.state_path.stat().st_mode)
+        self.assertEqual(dir_mode, 0o700)
+        self.assertEqual(file_mode, 0o600)
+
+    def test_atomic_write_tightens_legacy_modes(self):
+        # A 0755/0644 cache from an older version is tightened on rewrite.
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.state_path.parent, 0o755)
+        self.state_path.write_text("old", encoding="utf-8")
+        os.chmod(self.state_path, 0o644)
+        sync.atomic_write(self.state_path, '{"x": 1}\n')
+        dir_mode = stat.S_IMODE(self.state_path.parent.stat().st_mode)
+        file_mode = stat.S_IMODE(self.state_path.stat().st_mode)
+        self.assertEqual(dir_mode, 0o700)
+        self.assertEqual(file_mode, 0o600)
+
+    def test_save_config_private_modes(self):
+        from sync.config import save_config
+        cfg_path = self.dir / "cfg" / "config.json"
+        save_config({"timezone": "UTC"}, cfg_path)
+        dir_mode = stat.S_IMODE(cfg_path.parent.stat().st_mode)
+        file_mode = stat.S_IMODE(cfg_path.stat().st_mode)
+        self.assertEqual(dir_mode, 0o700)
+        self.assertEqual(file_mode, 0o600)
+
     def test_api_error_preserves_last_good(self):
         # Successful sync first.
         os.environ["FAKE_GWS_AUTH"] = "ok"
