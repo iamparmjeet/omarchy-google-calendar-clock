@@ -202,6 +202,36 @@ class TestMutate(unittest.TestCase):
         state_file = self.dir / "xdg-state" / "parm.clock" / "state.json"
         self.assertTrue(state_file.exists())
 
+    def _assert_usage_rejected(self, flag, *args):
+        """Exit 4 naming the offending flag, and no gws invocation at all."""
+        r = self._run(*args)
+        self.assertEqual(r.returncode, 4, r.stdout)
+        self.assertIn(flag, r.stderr)
+        self.assertEqual(self._calls(), [])
+
+    def test_event_add_rejects_malformed_date(self):
+        self._assert_usage_rejected(
+            "--date",
+            "event-add", "--calendar", "primary", "--title", "X",
+            "--date", "tomorrow", "--start", "14:00")
+
+    def test_event_add_rejects_malformed_time(self):
+        self._assert_usage_rejected(
+            "--start/--end",
+            "event-add", "--calendar", "primary", "--title", "X",
+            "--date", "2026-08-21", "--start", "25:99")
+
+    def test_event_add_rejects_end_before_start(self):
+        self._assert_usage_rejected(
+            "--end",
+            "event-add", "--calendar", "primary", "--title", "X",
+            "--date", "2026-08-21", "--start", "14:00", "--end", "10:00")
+
+    def test_task_add_rejects_malformed_due(self):
+        self._assert_usage_rejected(
+            "--due",
+            "task-add", "--list", "default", "--title", "X", "--due", "next week")
+
 
 if __name__ == "__main__":
     unittest.main()

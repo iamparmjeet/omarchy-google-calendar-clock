@@ -46,7 +46,10 @@ Panel {
   readonly property bool showTaskBadge: setting("showTaskBadge", true)
   readonly property string badgeMode: setting("badgeCount", "dueToday")
   property bool settingsVisible: false
-  readonly property var hiddenCalendars: setting("hiddenCalendars", [])
+  readonly property var hiddenCalendars: {
+    var v = setting("hiddenCalendars", [])
+    return Array.isArray(v) ? v : []
+  }
   readonly property string viewMode: {
     var v = String(setting("panelView", "month"))
     return v === "week" || v === "upcoming" || v === "tasks" ? v : "month"
@@ -172,16 +175,18 @@ Panel {
   readonly property string syncLabel: Model.syncStatusLabel(root.state.syncStatus, new Date())
   readonly property bool syncStale: Model.isStale(root.state.syncStatus, new Date(), 30)
   function runSync() {
-    if (root.bar) root.bar.run("python3 " + syncPath + " && omarchy-shell -q parm.clock refresh")
+    if (root.bar) root.bar.run("python3 " + shellQuote(syncPath) + " && omarchy-shell -q parm.clock refresh")
   }
-  readonly property string syncPath: {
-    var u = Qt.resolvedUrl("sync/sync.py").toString()
-    return u.startsWith("file://") ? u.slice(7) : u
+  // Qt.resolvedUrl() percent-encodes spaces and non-ASCII in the path; decode
+  // before handing it to python3, or a plugin dir under e.g. /home/my name/
+  // never resolves.
+  function pluginPath(relative) {
+    var u = Qt.resolvedUrl(relative).toString()
+    return u.startsWith("file://") ? decodeURIComponent(u.slice(7)) : u
   }
-  readonly property string mutatePath: {
-    var u = Qt.resolvedUrl("sync/mutate.py").toString()
-    return u.startsWith("file://") ? u.slice(7) : u
-  }
+  function shellQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
+  readonly property string syncPath: pluginPath("sync/sync.py")
+  readonly property string mutatePath: pluginPath("sync/mutate.py")
   readonly property string primaryCalendarId: {
     var list = root.state.calendars
     var fallback = ""
@@ -233,10 +238,20 @@ Panel {
     var c = Model.calendarColor(root.state.calendars, ev.calendarId)
     return c !== "" ? c : Style.selectedStateColor(root.contentForeground, Color.accent)
   }
+  // Event links are organizer-controlled data (a shared calendar's
+  // conferenceData can carry arbitrary entry-point URIs), so only known-safe
+  // schemes are opened — never via a shell, always through Qt's opener.
+  readonly property var allowedUrlSchemes: ["https:", "http:", "meet:", "zoommtg:", "tel:", "mailto:"]
   function openEventLink(ev) {
     var url = ev.htmlLink || ev.meetUrl || ""
-    if (url !== "" && root.bar) root.bar.run("xdg-open '" + url.replace(/'/g, "'\\''") + "'")
-    else if (url !== "") Qt.openUrlExternally(url)
+    if (url === "") return
+    var m = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url)
+    var scheme = m ? m[1].toLowerCase() : ""
+    if (root.allowedUrlSchemes.indexOf(scheme) === -1) {
+      console.warn("parm.clock refused to open URL with untrusted scheme:", scheme || "(no scheme)")
+      return
+    }
+    Qt.openUrlExternally(url)
   }
 
   SystemClock {

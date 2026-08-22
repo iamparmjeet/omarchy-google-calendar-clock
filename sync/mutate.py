@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import uuid
@@ -67,6 +68,34 @@ def _all_day_end(date_str: str) -> str:
     return (d + timedelta(days=1)).isoformat()
 
 
+def _valid_hhmm(text: str | None) -> bool:
+    """True if ``text`` is absent or a wall-clock ``HH:MM`` (00:00–23:59)."""
+    if not text:
+        return True
+    m = re.fullmatch(r"(\d{2}):(\d{2})", text)
+    return bool(m) and int(m.group(1)) <= 23 and int(m.group(2)) <= 59
+
+
+def _validate_args(args) -> int | None:
+    """Reject malformed input with a usage error before any gws/Google call.
+
+    Malformed dates/times spliced into an EventDateTime otherwise surface as
+    raw Google 400s — exit 3 with an API message instead of exit 4 with the
+    offending flag named.
+    """
+    if args.command == "event-add":
+        if parse_date(args.date) is None:
+            return _fail("usage", "--date must be YYYY-MM-DD")
+        if not _valid_hhmm(args.start) or not _valid_hhmm(args.end):
+            return _fail("usage", "--start/--end must be HH:MM (00:00-23:59)")
+        if args.start and args.end and args.end < args.start:
+            return _fail("usage", "--end must not be before --start")
+    elif args.command == "task-add":
+        if args.due and parse_date(args.due) is None:
+            return _fail("usage", "--due must be YYYY-MM-DD")
+    return None
+
+
 def _main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="mutate.py")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -103,6 +132,9 @@ def _main(argv: list[str]) -> int:
     td.add_argument("--task", required=True)
 
     args = parser.parse_args(argv)
+    usage_error = _validate_args(args)
+    if usage_error is not None:
+        return usage_error
     cfg = load_config()
     gws_path = cfg.get("gwsPath")
 

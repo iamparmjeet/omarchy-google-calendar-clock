@@ -111,8 +111,9 @@ install_correct_gws() {
     echo "   would run: npm install -g @googleworkspace/cli@0.22.5  (or pinned cargo fallback)"
     return 0
   fi
-  # Remove wrong pacman gws if present
-  if pacman -Q gws 2>/dev/null | grep -q "Colorful KISS helper"; then
+  # Remove wrong pacman gws if present (-Qi: -Q prints only "name version",
+  # never the description the grep looks for)
+  if pacman -Qi gws 2>/dev/null | grep -q "Colorful KISS helper"; then
     warn "Removing wrong pacman package 'gws' (StreakingCobra/git-workspace)…"
     sudo pacman -Rns --noconfirm gws 2>/dev/null || true
     hash -r 2>/dev/null || true
@@ -280,6 +281,13 @@ write_config() {
   local gws_path
   gws_path="$(command -v gws)"
 
+  # Validate the zone name before it is baked into JSON: a weird /etc/timezone
+  # (multiline, quotes) would otherwise write a config.json that load_config
+  # silently ignores, quietly reverting the user to the auto-detected zone.
+  if ! python3 -c 'import sys, zoneinfo; zoneinfo.ZoneInfo(sys.argv[1])' "$TIMEZONE" >/dev/null 2>&1; then
+    die "timezone '$TIMEZONE' is not a valid IANA zone — pass --timezone <zone>"
+  fi
+
   info "Writing $CONFIG_FILE"
   if $DRY_RUN; then
     echo "   would write: $CONFIG_FILE"
@@ -348,8 +356,11 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+# A single gws call may take up to its 120s adapter timeout; a slow network can
+# stack several, so the whole sync gets 10 minutes before systemd reaps it.
+# (The state file stays last-good either way — writes are atomic.)
 ExecStart=$python_bin $SYNC_DIR/sync.py
-TimeoutStartSec=120
+TimeoutStartSec=600
 Nice=10
 
 [Install]

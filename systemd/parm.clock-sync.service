@@ -1,3 +1,6 @@
+# Portable reference unit — scripts/setup.sh rewrites this with the machine's
+# detected absolute paths (python3 location + plugin dir) when it installs the
+# timer. %h expands to the user's home under `systemctl --user`.
 [Unit]
 Description=Sync Google Calendar and Tasks for parm.clock (gws)
 Wants=network-online.target
@@ -5,8 +8,8 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/home/parm/.local/share/mise/installs/python/latest/bin/python3 /home/parm/.config/omarchy/plugins/parm.clock/sync/sync.py
-TimeoutStartSec=120
+ExecStart=/usr/bin/env python3 %h/.config/omarchy/plugins/parm.clock/sync/sync.py
+TimeoutStartSec=600
 Nice=10
 
 [Install]

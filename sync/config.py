@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Optional
+from zoneinfo import ZoneInfoNotFoundError
 
 from .schema import SYNC_STATES  # noqa: F401  (re-export convenience)
 
@@ -84,6 +85,21 @@ def load_config(path: Optional[Path] = None) -> dict:
     return cfg
 
 
+def _is_valid_timezone(tz: str) -> bool:
+    """True if ``tz`` names a zone the system's zoneinfo can construct.
+
+    Guards ``compute_window`` — ``ZoneInfo`` raises ``ZoneInfoNotFoundError``
+    (a ``KeyError``) for unknown names, which no sync handler catches.
+    """
+    from zoneinfo import ZoneInfo
+
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return False
+    return True
+
+
 def validate_config(cfg: dict) -> list[str]:
     """Return a list of config errors (empty = valid)."""
     errors: list[str] = []
@@ -91,11 +107,18 @@ def validate_config(cfg: dict) -> list[str]:
     tz = cfg.get("timezone")
     if not isinstance(tz, str) or not tz:
         errors.append("timezone must be a non-empty string")
+    elif not _is_valid_timezone(tz):
+        errors.append(f"timezone is not a known IANA zone: {tz!r}")
 
-    for key in ("pastDays", "futureDays", "syncIntervalMin"):
+    # Upper bounds keep the window math inside date/timedelta range; without
+    # them an absurd value raises OverflowError out of run_sync.
+    caps = {"pastDays": 3650, "futureDays": 3650, "syncIntervalMin": 10080}
+    for key, cap in caps.items():
         v = cfg.get(key)
         if not isinstance(v, int) or isinstance(v, bool) or v < 0:
             errors.append(f"{key} must be a non-negative integer")
+        elif v > cap:
+            errors.append(f"{key} must be at most {cap}")
 
     gws = cfg.get("gwsPath")
     if not isinstance(gws, str) or not gws:

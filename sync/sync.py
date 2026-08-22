@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import count
 from pathlib import Path
 from typing import Optional
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Unique-per-process counter for atomic_write temp names (see atomic_write).
 _TMP_COUNTER = count()
@@ -216,7 +216,6 @@ def run_sync(
     ``reuse_discovery=True`` skips calendar/tasklist discovery and reuses the
     lists from the last-good state (fast post-write refresh).
     """
-    global STATE_PATH
     target = state_path or STATE_PATH
 
     if cfg is None:
@@ -323,7 +322,8 @@ def run_sync(
                 print(f"warning: tasklist {tl_id} skipped: {e}", file=sys.stderr)
             return out
 
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        pool = ThreadPoolExecutor(max_workers=6)
+        try:
             event_futures = {pool.submit(_fetch_events, c): "event" for c in calendar_ids}
             task_futures = {pool.submit(_fetch_tasks, t["id"]): "task" for t in tasklists}
 
@@ -335,6 +335,14 @@ def run_sync(
                     events.extend(fut.result())
                 else:
                     tasks.extend(fut.result())
+        except BaseException:
+            # An auth/api failure from any worker must not wait out the still
+            # queued fetches (each gws call can take up to its 120s timeout):
+            # cancel the queue, leave the in-flight calls, and re-raise.
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            pool.shutdown(wait=True)
 
         events = _cap(sort_events(dedupe(events)), MAX_STATE_EVENTS, "events")
         tasks = _cap(sort_tasks(tasks), MAX_STATE_TASKS, "tasks")
@@ -370,6 +378,12 @@ def run_sync(
         # last-good.
         _preserve_or_emit_failure(target, cfg, "error", str(e))
         return 3
+    except ZoneInfoNotFoundError:
+        # Defense in depth: validate_config rejects unknown zones, but a
+        # caller-provided cfg must still fail as a clean config error rather
+        # than an uncaught KeyError from compute_window.
+        _preserve_or_emit_failure(target, cfg, "error", f"unknown timezone: {timezone}")
+        return 4
     except OSError as e:
         _preserve_or_emit_failure(target, cfg, "error", f"io error: {e}")
         return 5
@@ -395,7 +409,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = argv if argv is not None else sys.argv[1:]
     gws_path = None
     if "--gws" in args:
-        gws_path = args[args.index("--gws") + 1]
+        i = args.index("--gws")
+        if i + 1 >= len(args):
+            print("error: --gws requires a value", file=sys.stderr)
+            return 4
+        gws_path = args[i + 1]
     return run_sync(gws_path=gws_path)
 
 

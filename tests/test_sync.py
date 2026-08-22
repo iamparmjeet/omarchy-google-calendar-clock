@@ -178,6 +178,24 @@ class TestSyncPipeline(unittest.TestCase):
         code = sync.run_sync(cfg, gws_path=str(self.fake), state_path=self.state_path)
         self.assertEqual(code, 4)
 
+    def test_unknown_timezone_rejected(self):
+        # ZoneInfo() raises ZoneInfoNotFoundError (a KeyError) for unknown
+        # names — validation must catch it, not compute_window.
+        cfg = self._cfg()
+        cfg["timezone"] = "Mars/Olympus_Mons"
+        code = sync.run_sync(cfg, gws_path=str(self.fake), state_path=self.state_path)
+        self.assertEqual(code, 4)
+
+    def test_absurd_day_window_rejected(self):
+        # Without a cap, timedelta(days=10**9) raises OverflowError uncaught.
+        cfg = self._cfg()
+        cfg["futureDays"] = 10**9
+        code = sync.run_sync(cfg, gws_path=str(self.fake), state_path=self.state_path)
+        self.assertEqual(code, 4)
+
+    def test_main_gws_flag_requires_value(self):
+        self.assertEqual(sync.main(["--gws"]), 4)
+
     def test_atomic_write_no_tmp_left(self):
         sync.atomic_write(self.state_path, '{"x": 1}\n')
         leftovers = list(self.state_path.parent.glob("*.tmp"))

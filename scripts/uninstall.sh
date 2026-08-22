@@ -188,8 +188,8 @@ main() {
     else
       info "google-cloud-cli not installed"
     fi
-    # wrong gws (StreakyCobra) via pacman
-    if pacman -Q gws 2>/dev/null | grep -q "Colorful KISS helper"; then
+    # wrong gws (StreakyCobra) via pacman (-Qi: -Q has no description)
+    if pacman -Qi gws 2>/dev/null | grep -q "Colorful KISS helper"; then
       if ask "Remove wrong pacman package 'gws' (StreakyCobra/git-workspace)?"; then
         run sudo pacman -Rns --noconfirm gws || true
         ok "removed pacman gws"
