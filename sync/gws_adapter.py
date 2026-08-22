@@ -140,6 +140,10 @@ def _run_capped(cmd: list[str], *, timeout: float) -> tuple[int, str, str]:
         raise
     finally:
         sel.close()
+        # Popen leaves the pipe fds open until GC; close them deterministically
+        # so capped reads don't leak fds / raise ResourceWarnings under -W error.
+        for stream in chunks:
+            stream.close()
 
 
 def run(

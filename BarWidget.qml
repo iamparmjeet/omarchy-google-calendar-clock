@@ -131,8 +131,8 @@ BarWidget {
 
   // Watches the synced state file so the badge updates after every sync
   // without a shell restart. ClockStateFile keeps FileView from reading the
-  // file wholesale — it is only a change signal; the bounded read happens
-  // in a child process that sizes before it cats.
+  // file wholesale — it is only a change signal; the read happens in a child
+  // process capped by a single head -c, so no file swap can enlarge it.
   ClockStateFile {
     id: stateFile
     path: root.statePath

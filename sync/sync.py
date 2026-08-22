@@ -199,8 +199,15 @@ def load_last_good(target: Optional[Path] = None) -> Optional[dict]:
     """Return the current state.json if it validates, else None."""
     path = target or STATE_PATH
     try:
-        raw = path.read_text(encoding="utf-8")
-        state = json.loads(raw)
+        # Bounded single-open read: state.json is user-writable, so it can be
+        # replaced by something arbitrarily large. Never materialize more than
+        # the writer's own ceiling (MAX_STATE_BYTES); a larger file is foreign
+        # or corrupt and gets no last-good treatment.
+        with path.open("rb") as f:
+            raw_bytes = f.read(MAX_STATE_BYTES + 1)
+        if len(raw_bytes) > MAX_STATE_BYTES:
+            return None
+        state = json.loads(raw_bytes.decode("utf-8"))
     except (OSError, ValueError):
         return None
     if validate_state(state):

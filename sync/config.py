@@ -68,16 +68,26 @@ DEFAULT_CONFIG = {
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser() / "parm.clock"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
+# config.json is user-writable; a file past this size is foreign or corrupt and
+# is treated as malformed (defaults) rather than materialized.
+MAX_CONFIG_BYTES = 64 * 1024
+
 
 def load_config(path: Optional[Path] = None) -> dict:
     """Load the sync config, merged over defaults. Never raises.
 
-    A missing or malformed file returns the defaults (with auto-detected timezone).
+    A missing, malformed, or oversized file returns the defaults (with
+    auto-detected timezone).
     """
     cfg = dict(DEFAULT_CONFIG)
     target = Path(path) if path else CONFIG_PATH
     try:
-        raw = json.loads(target.read_text(encoding="utf-8"))
+        # Bounded single-open read; see MAX_CONFIG_BYTES above.
+        with target.open("rb") as f:
+            raw_bytes = f.read(MAX_CONFIG_BYTES + 1)
+        if len(raw_bytes) > MAX_CONFIG_BYTES:
+            raise ValueError("config.json exceeds size ceiling")
+        raw = json.loads(raw_bytes.decode("utf-8"))
         if isinstance(raw, dict):
             cfg.update({k: v for k, v in raw.items() if k in DEFAULT_CONFIG})
     except (OSError, ValueError):
