@@ -247,7 +247,9 @@ Panel {
     if (url === "") return
     var m = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url)
     var scheme = m ? m[1].toLowerCase() : ""
-    if (root.allowedUrlSchemes.indexOf(scheme) === -1) {
+    // allowedUrlSchemes stores schemes in "name:" form, but the regex capture
+    // group excludes the colon, so compare in the list's own form.
+    if (root.allowedUrlSchemes.indexOf(scheme + ":") === -1) {
       console.warn("parm.clock refused to open URL with untrusted scheme:", scheme || "(no scheme)")
       return
     }
