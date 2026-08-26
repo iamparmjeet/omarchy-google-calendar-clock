@@ -45,7 +45,8 @@ Column {
   signal selectDay(string key)
   signal stepWeek(int delta)
   signal backToTodayRequested()
-  signal openEvent(var ev)
+  signal openEvent(var ev)          // body tap -> detail
+  signal openEventExternally(var ev) // ↗ -> Google
 
   width: parent.width
   spacing: Style.space(10)
@@ -160,9 +161,17 @@ Column {
                     textFormat: Text.PlainText
                     color: view.foreground; font.family: view.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight
                   }
-                  Text { anchors.verticalCenter: parent.verticalCenter; text: "↗"; color: Qt.darker(view.foreground, 1.7); font.family: view.fontFamily; font.pixelSize: Style.font.caption }
+                  Text {
+                    anchors.verticalCenter: parent.verticalCenter; text: "↗"
+                    color: Qt.darker(view.foreground, 1.7); font.family: view.fontFamily; font.pixelSize: Style.font.caption
+                    // Its own hit area, so ↗ keeps going straight to Google while
+                    // the rest of the chip opens the detail view.
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: view.openEventExternally(chip.modelData) }
+                  }
                 }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: view.openEvent(chip.modelData) }
+                // Below the Row so the ↗ hit area above wins; plain Text does not
+                // accept clicks, so the rest of the chip still falls through here.
+                MouseArea { z: -1; anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: view.openEvent(chip.modelData) }
               }
             }
             Rectangle {
