@@ -46,6 +46,17 @@ Panel {
   readonly property bool showTaskBadge: setting("showTaskBadge", true)
   readonly property string badgeMode: setting("badgeCount", "dueToday")
   property bool settingsVisible: false
+  // Non-null while the detail view has replaced the calendar area. Held by id
+  // rather than by reference so a sync that rewrites state.json re-resolves to
+  // the fresh copy instead of pinning a stale event object.
+  property string detailEventId: ""
+  readonly property var detailEvent: {
+    if (root.detailEventId === "") return null
+    var list = root.state.events || []
+    for (var i = 0; i < list.length; i++) if (list[i].id === root.detailEventId) return list[i]
+    return null
+  }
+  readonly property bool detailVisible: !!root.detailEvent
   readonly property var hiddenCalendars: {
     var v = setting("hiddenCalendars", [])
     return Array.isArray(v) ? v : []
@@ -141,6 +152,15 @@ Panel {
     persistSettings({ panelView: mode })
   }
   function toggleSettings() { root.settingsVisible = !root.settingsVisible }
+  function showEventDetail(ev) { if (ev && ev.id) { root.detailEventId = ev.id; root.settingsVisible = false } }
+  function closeEventDetail() { root.detailEventId = "" }
+  function editEventFromDetail(ev) {
+    if (!ev) return
+    root.closeEventDetail()
+    root.editingNewTask = false
+    root.editingNewEvent = true
+    Qt.callLater(function() { eventForm.openForEdit(ev) })
+  }
   function toggleShowCompleted() { persistSettings({ showCompletedTasks: !root.showCompletedTasks }) }
 
   // ---- life rails editing
@@ -221,10 +241,11 @@ Panel {
     mutateProc.running = true
   }
   function newEventQuick(text) { if (!text) return; runMutate(["event-quickadd", "--calendar", root.primaryCalendarId, "--text", text]) }
-  function newEventForm(title, date, start, end, location, meet) {
+  function newEventForm(title, date, start, end, endDate, location, meet) {
     var args = ["event-add", "--calendar", root.primaryCalendarId, "--title", title, "--date", date]
     if (start) args = args.concat(["--start", start])
     if (end) args = args.concat(["--end", end])
+    if (endDate) args = args.concat(["--end-date", endDate])
     if (location) args = args.concat(["--location", location])
     if (meet) args.push("--meet")
     runMutate(args)
@@ -232,6 +253,26 @@ Panel {
   function newTask(title, due) { var args = ["task-add", "--list", root.primaryTasklistId, "--title", title]; if (due) args = args.concat(["--due", due]); runMutate(args) }
   function completeTask(task) { if (!task || !task.id) return; runMutate(["task-complete", "--list", task.listId || root.primaryTasklistId, "--task", task.id]) }
   function uncompleteTask(task) { if (!task || !task.id) return; runMutate(["task-complete", "--list", task.listId || root.primaryTasklistId, "--task", task.id, "--undo"]) }
+  function updateEvent(ev, title, date, start, end, endDate, location) {
+    if (!ev || !ev.id) return
+    var argv = ["event-update", "--calendar", ev.calendarId || root.primaryCalendarId, "--event", ev.id]
+    if (title !== undefined) argv.push("--title", title)
+    if (location !== undefined) argv.push("--location", location)
+    // start/end are only meaningful alongside a date; the backend enforces it too.
+    if (date) {
+      argv.push("--date", date)
+      if (start) argv.push("--start", start)
+      if (end) argv.push("--end", end)
+      if (endDate) argv.push("--end-date", endDate)
+    }
+    runMutate(argv)
+  }
+  function deleteEvent(ev) {
+    if (!ev || !ev.id) return
+    root.closeEventDetail()
+    runMutate(["event-delete", "--calendar", ev.calendarId || root.primaryCalendarId, "--event", ev.id])
+  }
+
   function deleteTask(task) { if (!task || !task.id) return; runMutate(["task-delete", "--list", task.listId || root.primaryTasklistId, "--task", task.id]) }
 
   function dotColor(ev) {
@@ -242,9 +283,10 @@ Panel {
   // conferenceData can carry arbitrary entry-point URIs), so only known-safe
   // schemes are opened — never via a shell, always through Qt's opener.
   readonly property var allowedUrlSchemes: ["https:", "http:", "meet:", "zoommtg:", "tel:", "mailto:"]
-  function openEventLink(ev) {
-    var url = ev.htmlLink || ev.meetUrl || ""
-    if (url === "") return
+  // Every outbound URL goes through here, whatever built it, so the scheme
+  // allowlist cannot be bypassed by adding a new call site later.
+  function openUrlSafely(url) {
+    if (!url || url === "") return
     var m = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url)
     var scheme = m ? m[1].toLowerCase() : ""
     // allowedUrlSchemes stores schemes in "name:" form, but the regex capture
@@ -254,6 +296,12 @@ Panel {
       return
     }
     Qt.openUrlExternally(url)
+  }
+  function openEventLink(ev) { if (ev) root.openUrlSafely(ev.htmlLink || ev.meetUrl || "") }
+  function openLocationInMaps(location) {
+    var q = String(location || "").trim()
+    if (q === "") return
+    root.openUrlSafely("https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q))
   }
 
   SystemClock {
@@ -420,9 +468,33 @@ Panel {
             }
           }
 
+          // ---- Detail view: replaces the calendar area, pills and agenda card
+          //      while an event is open. Column skips invisible children, so
+          //      the blocks below collapse rather than leaving a gap.
+          Loader {
+            width: parent.width
+            active: root.detailVisible
+            visible: active
+            sourceComponent: ClockEventDetail {
+              width: parent.width
+              ev: root.detailEvent
+              calendars: root.state.calendars || []
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              dotColor: root.dotColor
+              onBack: root.closeEventDetail()
+              onEditRequested: root.editEventFromDetail(ev)
+              onDeleteRequested: root.deleteEvent(ev)
+              onOpenExternally: root.openEventLink(ev)
+              onOpenUrl: root.openUrlSafely(url)
+              onOpenLocation: root.openLocationInMaps(location)
+            }
+          }
+
           // ---- Calendar area: only the active view is instantiated; switching
           //      pills destroys the old view and creates the new one.
           Item {
+            visible: !root.detailVisible
             width: parent.width
             height: viewLoader.item ? Math.max(viewLoader.item.minHeight, viewLoader.item.implicitHeight) : 0
             Loader {
@@ -468,7 +540,8 @@ Panel {
                   onSelectDay: root.selectDay(key)
                   onStepWeek: root.moveWeek(delta)
                   onBackToTodayRequested: root.goToToday()
-                  onOpenEvent: root.openEventLink(ev)
+                  onOpenEvent: root.showEventDetail(ev)
+                  onOpenEventExternally: root.openEventLink(ev)
                 }
               }
               Component {
@@ -482,6 +555,7 @@ Panel {
                   fontFamily: root.contentFontFamily
                   dotColor: root.dotColor
                   onOpenEvent: root.openEventLink(ev)
+                  onOpenEventDetail: root.showEventDetail(ev)
                 }
               }
               Component {
@@ -502,6 +576,7 @@ Panel {
 
           // ---- Pills: Month / Week / Upcoming / Tasks
           ClockViewPills {
+            visible: !root.detailVisible
             width: parent.width
             viewMode: root.viewMode
             foreground: root.contentForeground
@@ -509,10 +584,11 @@ Panel {
             onModeChosen: root.setViewMode(mode)
           }
 
-          Item { width: parent.width; height: Style.space(10) } // extra gap pills → events
+          Item { visible: !root.detailVisible; width: parent.width; height: Style.space(10) } // extra gap pills → events
 
           // ---- Events card
           ClockEventsCard {
+            visible: !root.detailVisible
             width: parent.width
             viewMode: root.viewMode
             selectedKey: root.selectedKey
@@ -524,6 +600,7 @@ Panel {
             fontFamily: root.contentFontFamily
             dotColor: root.dotColor
             onOpenEvent: root.openEventLink(ev)
+            onOpenEventDetail: root.showEventDetail(ev)
           }
 
           Item { width: parent.width; height: Style.space(40) } // breathing room events → actions
@@ -546,8 +623,16 @@ Panel {
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
             errorText: root.mutateOutput
-            onSubmitted: root.newEventForm(title, date, start, end, location, meet)
-            onCancelled: root.editingNewEvent = false
+            todayKey: root.todayKey
+            weekStart: root.weekStart
+            onSubmitted: {
+              // One form serves both flows; editingEvent is what tells them apart.
+              if (eventForm.editingEvent) root.updateEvent(eventForm.editingEvent, title, date, start, end, endDate, location)
+              else root.newEventForm(title, date, start, end, endDate, location, meet)
+              root.editingNewEvent = false
+              eventForm.editingEvent = null
+            }
+            onCancelled: { root.editingNewEvent = false; eventForm.editingEvent = null }
           }
 
           // ---- New task form

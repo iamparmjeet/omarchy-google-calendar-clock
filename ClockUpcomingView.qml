@@ -20,6 +20,7 @@ Column {
   readonly property var groups: Model.visibleUpcomingGroups(eventIndex, todayKey, 14, hiddenCalendars)
 
   signal openEvent(var ev)
+  signal openEventDetail(var ev)
 
   width: parent.width
   spacing: Style.space(6)
@@ -44,6 +45,7 @@ Column {
           fontFamily: view.fontFamily
           dotColor: view.dotColor
           onOpenRequested: view.openEvent(ev)
+          onDetailRequested: view.openEventDetail(ev)
         }
       }
     }

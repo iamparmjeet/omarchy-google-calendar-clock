@@ -209,6 +209,97 @@ class TestMutate(unittest.TestCase):
         self.assertIn(flag, r.stderr)
         self.assertEqual(self._calls(), [])
 
+    def test_event_update_patches_only_given_fields(self):
+        self._write_state()
+        r = self._run("event-update", "--calendar", "primary", "--event", "ev1",
+                      "--title", "Renamed")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        patches = self._method_calls("patch")
+        self.assertEqual(len(patches), 1)
+        body = json.loads(patches[0][patches[0].index("--json") + 1])
+        self.assertEqual(body, {"summary": "Renamed"})
+        params = json.loads(patches[0][patches[0].index("--params") + 1])
+        self.assertEqual(params["eventId"], "ev1")
+
+    def test_event_update_moves_start_and_end_together(self):
+        # Sending only start would let Google end up with end < start.
+        self._write_state()
+        r = self._run("event-update", "--calendar", "primary", "--event", "ev1",
+                      "--date", "2026-08-21", "--start", "14:00")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        body = json.loads(self._method_calls("patch")[0][self._method_calls("patch")[0].index("--json") + 1])
+        self.assertEqual(body["start"]["dateTime"], "2026-08-21T14:00:00")
+        self.assertEqual(body["end"]["dateTime"], "2026-08-21T15:00:00")
+
+    def test_event_update_allday_uses_exclusive_end(self):
+        self._write_state()
+        r = self._run("event-update", "--calendar", "primary", "--event", "ev1",
+                      "--date", "2026-08-22")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        body = json.loads(self._method_calls("patch")[0][self._method_calls("patch")[0].index("--json") + 1])
+        self.assertEqual(body["start"], {"date": "2026-08-22"})
+        self.assertEqual(body["end"], {"date": "2026-08-23"})
+
+    def test_event_add_multiday_allday_end_is_exclusive(self):
+        # The user picks the last day they mean; Google wants the day after.
+        self._write_state()
+        r = self._run("event-add", "--calendar", "primary", "--title", "Trip",
+                      "--date", "2026-08-21", "--end-date", "2026-08-23")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        body = json.loads(self._method_calls("insert")[0][self._method_calls("insert")[0].index("--json") + 1])
+        self.assertEqual(body["start"], {"date": "2026-08-21"})
+        self.assertEqual(body["end"], {"date": "2026-08-24"})
+
+    def test_event_add_multiday_timed_carries_end_date(self):
+        self._write_state()
+        r = self._run("event-add", "--calendar", "primary", "--title", "Shift",
+                      "--date", "2026-08-21", "--start", "22:00",
+                      "--end-date", "2026-08-22", "--end", "06:00")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        body = json.loads(self._method_calls("insert")[0][self._method_calls("insert")[0].index("--json") + 1])
+        self.assertEqual(body["start"]["dateTime"], "2026-08-21T22:00:00")
+        self.assertEqual(body["end"]["dateTime"], "2026-08-22T06:00:00")
+
+    def test_event_add_overnight_end_time_allowed_across_days(self):
+        # 06:00 < 22:00 is only an error when both land on the same day.
+        self._write_state()
+        r = self._run("event-add", "--calendar", "primary", "--title", "Night",
+                      "--date", "2026-08-21", "--start", "22:00",
+                      "--end-date", "2026-08-22", "--end", "06:00")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_event_add_rejects_end_before_start_same_day(self):
+        self._assert_usage_rejected(
+            "--end must not be before --start",
+            "event-add", "--calendar", "primary", "--title", "X",
+            "--date", "2026-08-21", "--start", "14:00", "--end", "13:00")
+
+    def test_event_add_rejects_end_date_before_date(self):
+        self._assert_usage_rejected(
+            "--end-date must not be before --date",
+            "event-add", "--calendar", "primary", "--title", "X",
+            "--date", "2026-08-21", "--end-date", "2026-08-20")
+
+    def test_event_update_multiday_moves_whole_span(self):
+        self._write_state()
+        r = self._run("event-update", "--calendar", "primary", "--event", "ev1",
+                      "--date", "2026-08-21", "--end-date", "2026-08-23")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        body = json.loads(self._method_calls("patch")[0][self._method_calls("patch")[0].index("--json") + 1])
+        self.assertEqual(body["start"], {"date": "2026-08-21"})
+        self.assertEqual(body["end"], {"date": "2026-08-24"})
+
+    def test_event_update_rejects_empty_patch(self):
+        self._assert_usage_rejected(
+            "at least one field",
+            "event-update", "--calendar", "primary", "--event", "ev1")
+
+    def test_event_update_rejects_time_without_date(self):
+        self._assert_usage_rejected(
+            "--start/--end/--end-date require --date",
+            "event-update", "--calendar", "primary", "--event", "ev1",
+            "--start", "14:00")
+
     def test_event_add_rejects_malformed_date(self):
         self._assert_usage_rejected(
             "--date",

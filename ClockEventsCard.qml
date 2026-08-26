@@ -20,6 +20,7 @@ Rectangle {
   required property var dotColor               // function(ev) -> color
 
   signal openEvent(var ev)
+  signal openEventDetail(var ev)
 
   readonly property var dayEvents: viewMode === "month" || viewMode === "week"
     ? Model.visibleEventsOn(eventIndex, selectedKey, hiddenCalendars)
@@ -57,6 +58,7 @@ Rectangle {
           fontFamily: card.fontFamily
           dotColor: card.dotColor
           onOpenRequested: card.openEvent(ev)
+          onDetailRequested: card.openEventDetail(ev)
         }
       }
       Text {
@@ -82,6 +84,7 @@ Rectangle {
           fontFamily: card.fontFamily
           dotColor: card.dotColor
           onOpenRequested: card.openEvent(ev)
+          onDetailRequested: card.openEventDetail(ev)
         }
       }
     }

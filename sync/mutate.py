@@ -57,6 +57,22 @@ def _event_datetime(date_str: str, time_str: str | None) -> dict:
     return {"date": date_str}
 
 
+def _event_span(date_str: str, start: str | None, end: str | None, end_date: str | None) -> tuple[dict, dict]:
+    """Build the (start, end) EventDateTime pair for a possibly multi-day event.
+
+    All-day ends are exclusive, so the last day the user picked has to be
+    advanced by one before it goes to Google; timed ends simply carry whatever
+    day the user chose.
+    """
+    last_day = end_date or date_str
+    span_start = _event_datetime(date_str, start)
+    if start:
+        span_end = _event_datetime(last_day, end or _plus_hour(start))
+    else:
+        span_end = {"date": _all_day_end(last_day)}
+    return span_start, span_end
+
+
 def _all_day_end(date_str: str) -> str:
     """All-day events are exclusive-ended; add one day."""
     d = parse_date(date_str)
@@ -86,8 +102,29 @@ def _validate_args(args) -> int | None:
             return _fail("usage", "--date must be YYYY-MM-DD")
         if not _valid_hhmm(args.start) or not _valid_hhmm(args.end):
             return _fail("usage", "--start/--end must be HH:MM (00:00-23:59)")
-        if args.start and args.end and args.end < args.start:
+        if args.end_date is not None and parse_date(args.end_date) is None:
+            return _fail("usage", "--end-date must be YYYY-MM-DD")
+        if args.end_date and args.end_date < args.date:
+            return _fail("usage", "--end-date must not be before --date")
+        # Times only order each other when the event lands on a single day.
+        if args.start and args.end and (args.end_date or args.date) == args.date and args.end < args.start:
             return _fail("usage", "--end must not be before --start")
+    elif args.command == "event-update":
+        # Every field is optional here (patch semantics), so validate only what
+        # was actually passed — but validate it exactly as event-add does.
+        if args.date is not None and parse_date(args.date) is None:
+            return _fail("usage", "--date must be YYYY-MM-DD")
+        for flag, value in (("--start", args.start), ("--end", args.end)):
+            if value not in (None, "") and not _valid_hhmm(value):
+                return _fail("usage", f"{flag} must be HH:MM (00:00-23:59)")
+        if args.end_date is not None and parse_date(args.end_date) is None:
+            return _fail("usage", "--end-date must be YYYY-MM-DD")
+        if args.end_date and args.date and args.end_date < args.date:
+            return _fail("usage", "--end-date must not be before --date")
+        if args.start and args.end and (args.end_date or args.date) == args.date and args.end < args.start:
+            return _fail("usage", "--end must not be before --start")
+        if (args.start or args.end or args.end_date) and not args.date:
+            return _fail("usage", "--start/--end/--end-date require --date")
     elif args.command == "task-add":
         if args.due and parse_date(args.due) is None:
             return _fail("usage", "--due must be YYYY-MM-DD")
@@ -108,8 +145,19 @@ def _main(argv: list[str]) -> int:
     ea.add_argument("--date", required=True)
     ea.add_argument("--start")
     ea.add_argument("--end")
+    ea.add_argument("--end-date", dest="end_date")
     ea.add_argument("--location", default="")
     ea.add_argument("--meet", action="store_true")
+
+    eu = sub.add_parser("event-update")
+    eu.add_argument("--calendar", required=True)
+    eu.add_argument("--event", required=True)
+    eu.add_argument("--title")
+    eu.add_argument("--date")
+    eu.add_argument("--start")
+    eu.add_argument("--end")
+    eu.add_argument("--end-date", dest="end_date")
+    eu.add_argument("--location")
 
     ed = sub.add_parser("event-delete")
     ed.add_argument("--calendar", required=True)
@@ -141,17 +189,8 @@ def _main(argv: list[str]) -> int:
             gws_adapter.quick_add_event(args.calendar, args.text, gws_path=gws_path)
 
         elif args.command == "event-add":
-            body = {
-                "summary": args.title,
-                "start": _event_datetime(args.date, args.start),
-            }
-            if args.start:
-                # Timed event: end required, fall back to start + 1h.
-                end_time = args.end or _plus_hour(args.start)
-                body["end"] = _event_datetime(args.date, end_time)
-            else:
-                # All-day: exclusive end.
-                body["end"] = {"date": _all_day_end(args.date)}
+            span_start, span_end = _event_span(args.date, args.start, args.end, args.end_date)
+            body = {"summary": args.title, "start": span_start, "end": span_end}
             if args.location:
                 body["location"] = args.location
             if args.meet:
@@ -164,6 +203,20 @@ def _main(argv: list[str]) -> int:
                     }
                 }
             gws_adapter.insert_event(args.calendar, body, gws_path=gws_path)
+
+        elif args.command == "event-update":
+            patch: dict = {}
+            if args.title is not None:
+                patch["summary"] = args.title
+            if args.location is not None:
+                patch["location"] = args.location
+            if args.date:
+                # start/end always move together: sending only one lets Google
+                # end up with end < start, which it rejects with an opaque 400.
+                patch["start"], patch["end"] = _event_span(args.date, args.start, args.end, args.end_date)
+            if not patch:
+                return _fail("usage", "event-update needs at least one field to change")
+            gws_adapter.patch_event(args.calendar, args.event, patch, gws_path=gws_path)
 
         elif args.command == "event-delete":
             gws_adapter.delete_event(args.calendar, args.event, gws_path=gws_path)
