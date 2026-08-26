@@ -27,7 +27,16 @@ Row {
   Text {
     width: row.timeWidth
     anchors.verticalCenter: parent.verticalCenter
-    text: row.ev.allDay ? "all day" : Model.eventTimeRange(row.ev)
+    // The row now repeats on every day the event covers, so the range alone
+    // would read as a same-day meeting. "+2d" fits the narrow time column and
+    // needs no month name.
+    text: {
+      var base = row.ev.allDay ? "all day" : Model.eventTimeRange(row.ev)
+      if (!Model.eventSpansDays(row.ev)) return base
+      var a = Model.keyToDate(row.ev.dateKey), b = Model.keyToDate(row.ev.endDateKey)
+      var days = (a && b) ? Math.round((b - a) / 86400000) : 0
+      return days > 0 ? base + " +" + days + "d" : base
+    }
     color: Qt.darker(row.foreground, 1.4)
     font.family: row.fontFamily
     font.pixelSize: Style.font.bodySmall
