@@ -5,6 +5,7 @@ Uses a fake gws executable so no network or credentials are involved.
 """
 
 import json
+import hashlib
 import os
 import stat
 import sys
@@ -159,7 +160,8 @@ class TestSyncPipeline(unittest.TestCase):
 
     def _cfg(self):
         return {"timezone": "Asia/Kolkata", "pastDays": 7, "futureDays": 60,
-                "gwsPath": str(self.fake), "hiddenCalendars": [], "tasklistIds": []}
+                "gwsPath": str(self.fake), "gwsSha256": hashlib.sha256(self.fake.read_bytes()).hexdigest(),
+                "hiddenCalendars": [], "tasklistIds": []}
 
     def test_full_sync_writes_valid_state(self):
         os.environ["FAKE_GWS_AUTH"] = "ok"
@@ -222,6 +224,14 @@ class TestSyncPipeline(unittest.TestCase):
         cfg["futureDays"] = 10**9
         code = sync.run_sync(cfg, gws_path=str(self.fake), state_path=self.state_path)
         self.assertEqual(code, 4)
+
+    def test_overlapping_sync_is_skipped(self):
+        lock = sync._acquire_sync_lock(self.state_path)
+        self.assertIsNotNone(lock)
+        try:
+            self.assertEqual(sync.run_sync(self._cfg(), gws_path=str(self.fake), state_path=self.state_path), 0)
+        finally:
+            sync._release_sync_lock(lock)
 
     def test_main_gws_flag_requires_value(self):
         self.assertEqual(sync.main(["--gws"]), 4)
@@ -288,7 +298,7 @@ class TestSyncPipeline(unittest.TestCase):
     def test_failure_message_is_clipped(self):
         with mock.patch.object(sync.gws_adapter.shutil, "which", return_value=None):
             code = sync.run_sync(
-                {"timezone": "UTC", "gwsPath": "/no/such/gws"},
+                {"timezone": "UTC", "gwsPath": "/no/such/gws", "gwsSha256": "0" * 64},
                 gws_path="/no/such/gws",
                 state_path=self.state_path,
             )
@@ -406,7 +416,8 @@ class TestStateByteCeiling(unittest.TestCase):
             state_path = Path(td) / "state.json"
             os.environ["FAKE_GWS_AUTH"] = "ok"
             cfg = {"timezone": "Asia/Kolkata", "pastDays": 7, "futureDays": 60,
-                   "gwsPath": str(fake), "hiddenCalendars": [], "tasklistIds": []}
+                   "gwsPath": str(fake), "gwsSha256": hashlib.sha256(fake.read_bytes()).hexdigest(),
+                   "hiddenCalendars": [], "tasklistIds": []}
             code = sync.run_sync(cfg, gws_path=str(fake), state_path=state_path)
             self.assertEqual(code, 0)
             self.assertLessEqual(state_path.stat().st_size, sync.MAX_STATE_BYTES)

@@ -90,11 +90,12 @@ omarchy plugin enable parm.clock center
 # Optional — custom project or timezone:
 # ~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --project my-gcp-project --timezone America/New_York
 # ~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --dry-run   # preview without executing
+# ~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --allow-aur # explicitly permit automatic AUR build
 ```
 
 What `setup.sh` does, in order:
 
-1. Verifies `gcloud` + `gws` are installed (installs via `yay` AUR for `google-cloud-cli` + `npm` for `@googleworkspace/cli@0.22.5` on Omarchy/Arch if missing, prompts `[Y/n]` with env + sizes);
+1. Verifies `gcloud` + `gws` are installed (the default path refuses automatic AUR build execution; use `--allow-aur` only after reviewing the `google-cloud-cli` PKGBUILD, while `gws` is installed from a verified npm tarball);
 2. Runs `gws auth setup --project omarchy-clock` (enables Calendar + Tasks APIs and ensures an OAuth client);
 3. Runs `gws auth login --services calendar,tasks` — **this is the one manual step**: a browser opens for a single Google consent screen;
 4. Verifies authentication (`gws auth status`);
@@ -105,9 +106,12 @@ What `setup.sh` does, in order:
 > **Testing-mode OAuth note:** if your GCP OAuth client is in *Testing* mode, add your account as a test user (GCP → APIs & Services → OAuth consent screen → Test users), otherwise consent will be rejected.
 
 For unattended or piped setup, pass `--yes` explicitly. Without it, package and
-privileged actions are refused when standard input is not a terminal. The
-installer records the canonical absolute path of the `gws` executable and the
-runtime re-checks that path before each sync.
+privileged actions are refused when standard input is not a terminal. The npm
+installer verifies the published SHA-512 integrity value for the pinned
+`@googleworkspace/cli@0.22.5` tarball before installing it. Setup records the
+canonical absolute path and SHA-256 digest of the selected `gws` executable;
+the runtime re-checks both before every sync or mutation. If an older config has
+no `gwsSha256`, rerun `setup.sh` before syncing.
 
 After setup, click the clock in the bar to open the popup. Use `MONTH`/`WEEK`/`UPCOMING`/`TASKS` pills to switch views, `+` to add an event, `☑` to add a task, `⚙` for settings, and `↻` to force a sync.
 
@@ -192,6 +196,7 @@ Sync-only keys (written by `setup.sh` to `~/.config/parm.clock/config.json`):
 - `timezone` (e.g. `Asia/Kolkata`, `America/New_York`) — auto-detected
 - `pastDays` / `futureDays` — sync window (default 7 / 60)
 - `gwsPath` — absolute path to the `gws` binary
+- `gwsSha256` — SHA-256 digest recorded during setup and checked at runtime
 - `syncIntervalMin` — selected timer interval in minutes (5, 15, 30, 60, 120, or 240)
 - `tasklistIds` — optional task-list filter (empty = all)
 
@@ -294,7 +299,7 @@ omarchy plugin add https://github.com/iamparmjeet/omarchy-google-calendar-clock.
 ~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --dry-run  # preview without side-effects
 ```
 
-`setup.sh` now prompts before installing dependencies and shows the right env (`node`, `npm`, `cargo`, `pacman`, `PATH`); it correctly installs **googleworkspace/cli** via `npm install -g @googleworkspace/cli@0.22.5` — pinned, like the cargo fallback — (not the wrong pacman `gws` git-workspace helper) and skips `gws auth setup` when already authenticated.
+`setup.sh` now prompts before installing dependencies and shows the right env (`node`, `npm`, `cargo`, `pacman`, `PATH`). The automatic npm path downloads `@googleworkspace/cli@0.22.5` once, verifies its published SHA-512 integrity value, and installs that exact local tarball. Automatic AUR and Cargo paths are opt-in (`--allow-aur` / `--allow-cargo`) because their build inputs are not independently verified by this plugin. Setup also records a SHA-256 pin for the selected `gws` executable and skips `gws auth setup` when already authenticated.
 
 ---
 

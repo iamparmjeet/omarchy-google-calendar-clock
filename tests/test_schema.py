@@ -213,7 +213,9 @@ class TestValidation(unittest.TestCase):
 class TestConfig(unittest.TestCase):
     def test_defaults_valid(self):
         from sync import config
-        self.assertEqual(config.validate_config(config.load_config(Path("/nonexistent"))), [])
+        cfg = config.load_config(Path("/nonexistent"))
+        cfg["gwsSha256"] = "0" * 64
+        self.assertEqual(config.validate_config(cfg), [])
 
     def test_bad_timezone(self):
         from sync import config
@@ -226,6 +228,18 @@ class TestConfig(unittest.TestCase):
         cfg = dict(config.DEFAULT_CONFIG)
         cfg["gwsPath"] = "./gws"
         self.assertTrue(any("gwsPath" in e for e in config.validate_config(cfg)))
+
+    def test_missing_gws_digest_requires_setup(self):
+        from sync import config
+        cfg = dict(config.DEFAULT_CONFIG)
+        cfg["gwsSha256"] = ""
+        self.assertTrue(any("gwsSha256" in e for e in config.validate_config(cfg)))
+
+    def test_invalid_gws_digest_rejected(self):
+        from sync import config
+        cfg = dict(config.DEFAULT_CONFIG)
+        cfg["gwsSha256"] = "not-a-digest"
+        self.assertTrue(any("gwsSha256" in e for e in config.validate_config(cfg)))
 
 
 if __name__ == "__main__":

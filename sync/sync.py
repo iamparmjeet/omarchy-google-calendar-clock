@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import fcntl
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from itertools import count
@@ -40,6 +41,7 @@ MAX_STATE_EVENTS = 10000
 MAX_STATE_TASKS = 10000
 MAX_CALENDARS = 100
 MAX_TASKLISTS = 100
+MAX_FETCH_SOURCES = 100
 
 # Hard ceiling on the serialized state.json. Field caps bound each record and
 # the item caps bound record counts, but together they still only bound the
@@ -56,13 +58,33 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(_ROOT))
     from sync import gws_adapter
     from sync.config import DEFAULT_CONFIG, load_config, validate_config
-    from sync.schema import clip, empty_state, normalize_event, normalize_task, utc_now, validate_state
+    from sync.schema import clip, empty_state, normalize_event, normalize_task, utc_now, validate_state, valid_id
 else:
     from . import gws_adapter
     from .config import DEFAULT_CONFIG, load_config, validate_config
-    from .schema import clip, empty_state, normalize_event, normalize_task, utc_now, validate_state
+    from .schema import clip, empty_state, normalize_event, normalize_task, utc_now, validate_state, valid_id
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", "~/.local/state")).expanduser() / "parm.clock"
 STATE_PATH = STATE_DIR / "state.json"
+
+
+def _acquire_sync_lock(target: Path):
+    """Keep timer and post-mutation refreshes from running concurrently."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(target.parent, 0o700)
+    lock_path = target.with_name(".sync.lock")
+    lock = lock_path.open("a+", encoding="utf-8")
+    os.chmod(lock_path, 0o600)
+    try:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        return None
+    return lock
+
+
+def _release_sync_lock(lock) -> None:
+    if lock is not None:
+        lock.close()
 
 
 def now_iso() -> str:
@@ -187,7 +209,9 @@ def atomic_write(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(path.parent, 0o700)
     tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{next(_TMP_COUNTER)}")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(tmp, flags, 0o600)
     try:
         # fchmod re-asserts 0600 even if a stale tmp (0644) already existed.
         os.fchmod(fd, 0o600)
@@ -272,6 +296,10 @@ def run_sync(
     lists from the last-good state (fast post-write refresh).
     """
     target = state_path or STATE_PATH
+    lock = _acquire_sync_lock(target)
+    if lock is None:
+        print("sync already running; skipping overlapping invocation", file=sys.stderr)
+        return 0
 
     if cfg is None:
         cfg = load_config()
@@ -282,26 +310,31 @@ def run_sync(
     config_errors = validate_config(cfg)
     if config_errors:
         _preserve_or_emit_failure(target, cfg, "error", "; ".join(config_errors))
+        _release_sync_lock(lock)
         return 4
 
     timezone = cfg.get("timezone") or DEFAULT_CONFIG["timezone"]
 
     # Locate gws.
     try:
-        exe = gws_adapter._find_gws(gws_path or cfg.get("gwsPath"))
+        exe = gws_adapter._find_gws(gws_path or cfg.get("gwsPath"), cfg.get("gwsSha256") or None)
     except gws_adapter.GwsNotFound as e:
         _preserve_or_emit_failure(target, cfg, "error", str(e))
+        _release_sync_lock(lock)
         return 5
 
     if not fetch:
-        state = empty_state(timezone, "never", "not yet synced")
-        atomic_write(target, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
-        return 0
+        try:
+            state = empty_state(timezone, "never", "not yet synced")
+            atomic_write(target, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+            return 0
+        finally:
+            _release_sync_lock(lock)
 
     try:
         # Auth check: any auth failure raises AuthError and we stop.
         if check_auth:
-            auth = gws_adapter.auth_status(exe)
+            auth = gws_adapter.auth_status(exe, cfg.get("gwsSha256") or None)
             if auth.get("auth_method") in (None, "none"):
                 raise gws_adapter.AuthError("not authenticated — run `gws auth login`")
 
@@ -315,19 +348,27 @@ def run_sync(
                 tasklists = prior.get("tasklists", [])
 
         if not reuse_discovery:
-            raw_calendars = gws_adapter.list_calendars(exe)
+            raw_calendars = gws_adapter.list_calendars(exe, cfg.get("gwsSha256") or None)
             calendars = filter_calendars(raw_calendars, cfg)
-            raw_tasklists = gws_adapter.list_tasklists(exe)
+            raw_tasklists = gws_adapter.list_tasklists(exe, cfg.get("gwsSha256") or None)
             tasklists = filter_tasklists(raw_tasklists, cfg)
 
-        calendars = [c for c in calendars if isinstance(c, dict) and isinstance(c.get("id"), str) and c["id"]]
-        tasklists = [t for t in tasklists if isinstance(t, dict) and isinstance(t.get("id"), str) and t["id"]]
+        calendars = [c for c in calendars if isinstance(c, dict) and valid_id(c.get("id"))]
+        tasklists = [t for t in tasklists if isinstance(t, dict) and valid_id(t.get("id"))]
         if len(calendars) > MAX_CALENDARS:
             print(f"warning: limiting calendars to {MAX_CALENDARS}", file=sys.stderr)
             calendars = calendars[:MAX_CALENDARS]
         if len(tasklists) > MAX_TASKLISTS:
             print(f"warning: limiting tasklists to {MAX_TASKLISTS}", file=sys.stderr)
             tasklists = tasklists[:MAX_TASKLISTS]
+        if len(calendars) + len(tasklists) > MAX_FETCH_SOURCES:
+            remaining = max(0, MAX_FETCH_SOURCES - len(calendars))
+            if len(calendars) > MAX_FETCH_SOURCES:
+                calendars = calendars[:MAX_FETCH_SOURCES]
+                tasklists = []
+            else:
+                tasklists = tasklists[:remaining]
+            print(f"warning: limiting calendar/task fetches to {MAX_FETCH_SOURCES}", file=sys.stderr)
         calendar_ids = [c["id"] for c in calendars]
 
         time_min, time_max = compute_window(cfg, timezone)
@@ -337,14 +378,17 @@ def run_sync(
         def _fetch_events(cal_id: str) -> list[dict]:
             out: list[dict] = []
             try:
-                for raw in gws_adapter.list_events(cal_id, time_min, time_max, gws_path=exe):
+                for raw in gws_adapter.list_events(
+                    cal_id, time_min, time_max, gws_path=exe,
+                    expected_sha256=cfg.get("gwsSha256") or None,
+                ):
                     if not isinstance(raw, dict):
                         print(f"warning: calendar {cal_id} returned a non-object event; skipped", file=sys.stderr)
                         continue
                     if raw.get("status") == "cancelled":
                         continue
                     normalized = normalize_event(raw, cal_id, timezone)
-                    if isinstance(normalized.get("id"), str) and normalized["id"]:
+                    if valid_id(normalized.get("id")):
                         out.append(normalized)
                     else:
                         print(f"warning: calendar {cal_id} returned an event without a string id; skipped", file=sys.stderr)
@@ -365,12 +409,15 @@ def run_sync(
         def _fetch_tasks(tl_id: str) -> list[dict]:
             out: list[dict] = []
             try:
-                for raw in gws_adapter.list_tasks(tl_id, due_max=time_max, show_completed=True, gws_path=exe):
+                for raw in gws_adapter.list_tasks(
+                    tl_id, due_max=time_max, show_completed=True, gws_path=exe,
+                    expected_sha256=cfg.get("gwsSha256") or None,
+                ):
                     if not isinstance(raw, dict):
                         print(f"warning: tasklist {tl_id} returned a non-object task; skipped", file=sys.stderr)
                         continue
                     normalized = normalize_task(raw, tl_id)
-                    if not isinstance(normalized.get("id"), str) or not normalized["id"]:
+                    if not valid_id(normalized.get("id")):
                         print(f"warning: tasklist {tl_id} returned a task without a string id; skipped", file=sys.stderr)
                         continue
                     # Recent-only filter for completed tasks: keep completed only if
@@ -467,6 +514,8 @@ def run_sync(
     except OSError as e:
         _preserve_or_emit_failure(target, cfg, "error", f"io error: {e}")
         return 5
+    finally:
+        _release_sync_lock(lock)
 
 
 def _preserve_or_emit_failure(target: Path, cfg: dict, sync_state: str, message: str) -> None:
@@ -474,7 +523,7 @@ def _preserve_or_emit_failure(target: Path, cfg: dict, sync_state: str, message:
     if load_last_good(target) is not None:
         # A valid prior state exists; leave it untouched (syncStatus stays as
         # it was last time). We surface the failure via stderr only.
-        print(f"sync failed ({sync_state}): {message}", file=sys.stderr)
+        print(f"sync failed ({sync_state}): {clip(message, 512)}", file=sys.stderr)
         return
     # No good state yet — emit a valid empty document marked with the failure,
     # so the UI still has something schema-valid to render.
