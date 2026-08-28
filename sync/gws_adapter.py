@@ -15,8 +15,10 @@ tokens; we only invoke it and parse its JSON.
 from __future__ import annotations
 
 import json
+import os
 import selectors
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -69,12 +71,23 @@ class GwsNotFound(GwsError):
 
 def _find_gws(path_override: Optional[str] = None) -> str:
     """Locate the gws binary, honoring an explicit path override."""
-    if path_override:
-        return path_override
-    found = shutil.which("gws")
-    if not found:
-        raise GwsNotFound("gws is not installed or not on PATH")
-    return found
+    candidates = [path_override] if path_override else []
+    candidates.append(shutil.which("gws"))
+    for candidate in candidates:
+        if not isinstance(candidate, str) or not os.path.isabs(candidate):
+            continue
+        try:
+            info = os.stat(candidate)
+        except OSError:
+            continue
+        if (
+            stat.S_ISREG(info.st_mode)
+            and info.st_uid in (os.getuid(), 0)
+            and not (info.st_mode & 0o022)
+            and os.access(candidate, os.X_OK)
+        ):
+            return candidate
+    raise GwsNotFound("gws is not installed or no trusted executable was found")
 
 
 def _extract_error(raw: str) -> dict:
@@ -275,7 +288,10 @@ def _list_all(
         data = run(service, resource, method, params=p, gws_path=gws_path)
         if not isinstance(data, dict):
             return items
-        items.extend(data.get("items", []) or [])
+        page_items = data.get("items", []) or []
+        if not isinstance(page_items, list):
+            return items
+        items.extend(page_items)
         if len(items) >= MAX_LIST_ITEMS:
             _warn_truncated(f"{service}.{resource}.list", f"{MAX_LIST_ITEMS} items")
             return items[:MAX_LIST_ITEMS]

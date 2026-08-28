@@ -357,6 +357,32 @@ function testEventIndexSingleDayUnchanged() {
   assert.deepStrictEqual(Object.keys(Model.eventIndex([ev])), ["2026-08-26"]);
 }
 
+function testEventExpansionIsBounded() {
+  const huge = {
+    id: "huge", calendarId: "primary", title: "Huge",
+    start: "0001-01-01", end: "9999-12-31", allDay: true,
+    dateKey: "0001-01-01", endDateKey: "9999-12-31",
+  };
+  const days = Model.dayRange(huge.dateKey, huge.endDateKey);
+  assert.strictEqual(days.length, 90);
+
+  const many = Array.from({ length: 2000 }, (_, i) => ({
+    ...huge,
+    id: "huge-" + i,
+    dateKey: "2026-01-01",
+    endDateKey: "2026-12-31",
+  }));
+  const index = Model.eventIndex(many);
+  const entries = Object.values(index).reduce((total, events) => total + events.length, 0);
+  assert.ok(entries <= 100000);
+  assert.ok(index["2026-01-01"].length > 0);
+}
+
+function testEventIndexIgnoresMalformedEvents() {
+  assert.deepStrictEqual(Model.eventIndex([null, "bad", { id: "ok", dateKey: "2026-08-20" }])["2026-08-20"].map((e) => e.id), ["ok"]);
+  assert.deepStrictEqual(Model.dayRange(null, "2026-08-20"), []);
+}
+
 function testEventSpansDays() {
   assert.strictEqual(Model.eventSpansDays({ dateKey: "2026-08-26", endDateKey: "2026-08-28" }), true);
   assert.strictEqual(Model.eventSpansDays({ dateKey: "2026-08-26", endDateKey: "2026-08-26" }), false);
@@ -372,6 +398,8 @@ function testEventEndTimeText() {
 const tests = [
   testEventIndexSpansTimedMultiDay,
   testEventIndexSingleDayUnchanged,
+  testEventExpansionIsBounded,
+  testEventIndexIgnoresMalformedEvents,
   testEventSpansDays,
   testEventEndTimeText,
   testEventIndex,

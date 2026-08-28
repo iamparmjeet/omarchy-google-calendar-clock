@@ -214,7 +214,7 @@ Panel {
     }
   }
   function runMutate(args) {
-    if (mutateProc.running) { console.warn("parm.clock runMutate blocked, already running", JSON.stringify(args)); return }
+    if (mutateProc.running) { console.warn("parm.clock runMutate blocked, already running", args.length ? args[0] : "unknown", "args:", args.length); return }
     mutateOutput = ""
     var cmd = ["python3", root.mutatePath].concat(args)
     mutateProc.command = cmd

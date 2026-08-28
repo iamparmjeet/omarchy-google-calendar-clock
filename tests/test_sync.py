@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest import mock
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -110,8 +111,26 @@ class TestWindow(unittest.TestCase):
 
 class TestDedupeSort(unittest.TestCase):
     def test_dedupe(self):
-        evs = [{"id": "a"}, {"id": "b"}, {"id": "a"}]
+        evs = [
+            {"id": "a", "calendarId": "one"},
+            {"id": "b", "calendarId": "one"},
+            {"id": "a", "calendarId": "one"},
+        ]
         self.assertEqual(len(sync.dedupe(evs)), 2)
+
+    def test_dedupe_keeps_same_id_from_different_calendars(self):
+        evs = [
+            {"id": "same", "calendarId": "attacker"},
+            {"id": "same", "calendarId": "primary"},
+        ]
+        self.assertEqual(len(sync.dedupe(evs)), 2)
+
+    def test_dedupe_skips_unhashable_or_invalid_ids(self):
+        evs = [
+            {"id": ["bad"], "calendarId": "one"},
+            {"id": "ok", "calendarId": "one"},
+        ]
+        self.assertEqual(sync.dedupe(evs), [{"id": "ok", "calendarId": "one"}])
 
     def test_sort_events_by_datekey(self):
         evs = [{"dateKey": "2026-08-22"}, {"dateKey": "2026-08-20"}]
@@ -166,7 +185,8 @@ class TestSyncPipeline(unittest.TestCase):
         os.environ["FAKE_GWS_AUTH"] = "ok"
         cfg = self._cfg()
         cfg["gwsPath"] = "/no/such/gws"
-        code = sync.run_sync(cfg, gws_path="/no/such/gws", state_path=self.state_path)
+        with mock.patch.object(sync.gws_adapter.shutil, "which", return_value=None):
+            code = sync.run_sync(cfg, gws_path="/no/such/gws", state_path=self.state_path)
         self.assertEqual(code, 5)
         state = json.loads(self.state_path.read_text())
         self.assertEqual(validate_state(state), [])
@@ -229,6 +249,42 @@ class TestSyncPipeline(unittest.TestCase):
         file_mode = stat.S_IMODE(cfg_path.stat().st_mode)
         self.assertEqual(dir_mode, 0o700)
         self.assertEqual(file_mode, 0o600)
+
+    def test_gws_path_falls_back_when_override_is_untrusted(self):
+        trusted = self.dir / "gws-trusted"
+        _write_fake_gws(self.dir).rename(trusted)
+        trusted.chmod(trusted.stat().st_mode | stat.S_IEXEC)
+        with mock.patch("sync.gws_adapter.shutil.which", return_value=str(trusted)):
+            self.assertEqual(sync.gws_adapter._find_gws("relative/gws"), str(trusted))
+
+    def test_gws_path_rejects_group_writable_override(self):
+        executable = self.dir / "group-writable-gws"
+        executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        executable.chmod(0o770)
+        with mock.patch("sync.gws_adapter.shutil.which", return_value=None), self.assertRaises(sync.gws_adapter.GwsNotFound):
+            sync.gws_adapter._find_gws(str(executable))
+
+    def test_malformed_remote_records_are_skipped(self):
+        os.environ["FAKE_GWS_AUTH"] = "ok"
+        with mock.patch.object(sync.gws_adapter, "list_events", return_value=[
+            "bad", None, {"id": {}, "start": [], "end": []},
+            {"id": "valid", "summary": "Valid", "start": {"dateTime": "2026-08-20T09:00:00Z"}, "end": {"dateTime": "2026-08-20T10:00:00Z"}},
+        ]), mock.patch.object(sync.gws_adapter, "list_tasks", return_value=[]):
+            code = sync.run_sync(self._cfg(), gws_path=str(self.fake), state_path=self.state_path)
+        self.assertEqual(code, 0)
+        state = json.loads(self.state_path.read_text())
+        self.assertEqual([event["id"] for event in state["events"]], ["valid"])
+
+    def test_failure_message_is_clipped(self):
+        with mock.patch.object(sync.gws_adapter.shutil, "which", return_value=None):
+            code = sync.run_sync(
+                {"timezone": "UTC", "gwsPath": "/no/such/gws"},
+                gws_path="/no/such/gws",
+                state_path=self.state_path,
+            )
+        self.assertEqual(code, 5)
+        state = json.loads(self.state_path.read_text())
+        self.assertLessEqual(len(state["syncStatus"]["message"]), 512)
 
     def test_api_error_preserves_last_good(self):
         # Successful sync first.

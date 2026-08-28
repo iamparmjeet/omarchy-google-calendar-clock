@@ -112,6 +112,7 @@ function keyForIso(iso) {
 // events across the grid.
 function dayRange(startIso, endIso) {
   var out = []
+  if (typeof startIso !== "string" || typeof endIso !== "string") return out
   var start = new Date(Date.UTC(
     parseInt(startIso.slice(0, 4), 10),
     parseInt(startIso.slice(5, 7), 10) - 1,
@@ -123,7 +124,8 @@ function dayRange(startIso, endIso) {
     parseInt(endIso.slice(8, 10), 10)
   ))
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return [startIso]
-  while (start <= end) {
+  var maxDays = 90
+  while (start <= end && out.length < maxDays) {
     out.push(dateKey(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()))
     start.setUTCDate(start.getUTCDate() + 1)
   }
@@ -317,17 +319,25 @@ function stepMonth(year, month, delta) {
 // Index the state's events into { dateKey: [event, ...] }, expanding all-day
 // and multi-day events across every day they span. dateKey is already local.
 function eventIndex(events) {
-  var index = {}
+  var index = Object.create(null)
+  var totalEntries = 0
+  var maxEntries = 100000
   var list = events || []
   for (var i = 0; i < list.length; i++) {
     var ev = list[i]
+    if (!ev || typeof ev !== "object") continue
     // Timed events span days exactly as all-day ones do; collapsing them to
     // the start day was why a two-day meeting only ever showed on day one.
     var days = dayRange(ev.dateKey, ev.endDateKey || (ev.allDay ? ev.end : ev.dateKey))
-    for (var d = 0; d < days.length; d++) {
-      var key = days[d]
+    var daysToIndex = days
+    if (totalEntries + days.length > maxEntries)
+      daysToIndex = days.length > 0 ? [days[0]] : []
+    for (var d = 0; d < daysToIndex.length && totalEntries < maxEntries; d++) {
+      var key = daysToIndex[d]
+      if (!key) continue
       if (!index[key]) index[key] = []
       index[key].push(ev)
+      totalEntries++
     }
   }
   return index

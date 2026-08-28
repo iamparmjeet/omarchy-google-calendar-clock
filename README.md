@@ -104,6 +104,11 @@ What `setup.sh` does, in order:
 
 > **Testing-mode OAuth note:** if your GCP OAuth client is in *Testing* mode, add your account as a test user (GCP → APIs & Services → OAuth consent screen → Test users), otherwise consent will be rejected.
 
+For unattended or piped setup, pass `--yes` explicitly. Without it, package and
+privileged actions are refused when standard input is not a terminal. The
+installer records the canonical absolute path of the `gws` executable and the
+runtime re-checks that path before each sync.
+
 After setup, click the clock in the bar to open the popup. Use `MONTH`/`WEEK`/`UPCOMING`/`TASKS` pills to switch views, `+` to add an event, `☑` to add a task, `⚙` for settings, and `↻` to force a sync.
 
 ### Option B — Manual (git clone)
@@ -189,6 +194,22 @@ Sync-only keys (written by `setup.sh` to `~/.config/parm.clock/config.json`):
 - `gwsPath` — absolute path to the `gws` binary
 - `syncIntervalMin` — informational; the timer interval is fixed at 5 min in the unit
 - `tasklistIds` — optional task-list filter (empty = all)
+
+The sync engine bounds event expansion to 90 calendar days and caps total
+expanded index entries in the QML model. Longer events remain in the cache,
+but only the bounded display window is indexed.
+
+## Security And Robustness
+
+Release `1.1.2` hardens the sync and installer boundaries. Remote event data
+cannot force unbounded calendar-day expansion, malformed API records are
+skipped instead of crashing the worker, and sync failure text is bounded before
+it reaches the cache. The generated config and timer files use private,
+atomic writes, while generated systemd paths are quoted safely.
+
+The plugin still runs as the logged-in user from a user-writable Omarchy plugin
+directory. Same-user malware can therefore replace plugin code or credentials;
+that is an inherent platform trust boundary, not a root-privilege boundary.
 
 > Calendar visibility is owned solely by the shell.json `hiddenCalendars` setting above — the sync fetches every calendar Google shows, so a hidden calendar can always be re-toggled from the panel's `⚙` settings.
 
