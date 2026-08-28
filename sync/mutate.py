@@ -35,7 +35,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from sync import gws_adapter  # noqa: E402
-from sync.config import load_config  # noqa: E402
+from sync.config import load_config, validate_config  # noqa: E402
 from sync.schema import parse_date  # noqa: E402
 from sync.sync import run_sync  # noqa: E402
 
@@ -45,7 +45,7 @@ def _tz() -> str:
 
 
 def _fail(kind: str, msg: str) -> int:
-    print(f"error: {msg}", file=sys.stderr)
+    print(f"error: {str(msg)[:512]}", file=sys.stderr)
     return {"auth": 2, "api": 3, "usage": 4, "io": 5}.get(kind, 5)
 
 
@@ -182,11 +182,15 @@ def _main(argv: list[str]) -> int:
     if usage_error is not None:
         return usage_error
     cfg = load_config()
+    config_errors = validate_config(cfg)
+    if config_errors:
+        return _fail("usage", "; ".join(config_errors))
     gws_path = cfg.get("gwsPath")
+    gws_sha256 = cfg.get("gwsSha256") or None
 
     try:
         if args.command == "event-quickadd":
-            gws_adapter.quick_add_event(args.calendar, args.text, gws_path=gws_path)
+            gws_adapter.quick_add_event(args.calendar, args.text, gws_path=gws_path, expected_sha256=gws_sha256)
 
         elif args.command == "event-add":
             span_start, span_end = _event_span(args.date, args.start, args.end, args.end_date)
@@ -202,7 +206,7 @@ def _main(argv: list[str]) -> int:
                         "conferenceSolutionKey": {"type": "hangoutsMeet"},
                     }
                 }
-            gws_adapter.insert_event(args.calendar, body, gws_path=gws_path)
+            gws_adapter.insert_event(args.calendar, body, gws_path=gws_path, expected_sha256=gws_sha256)
 
         elif args.command == "event-update":
             patch: dict = {}
@@ -216,26 +220,26 @@ def _main(argv: list[str]) -> int:
                 patch["start"], patch["end"] = _event_span(args.date, args.start, args.end, args.end_date)
             if not patch:
                 return _fail("usage", "event-update needs at least one field to change")
-            gws_adapter.patch_event(args.calendar, args.event, patch, gws_path=gws_path)
+            gws_adapter.patch_event(args.calendar, args.event, patch, gws_path=gws_path, expected_sha256=gws_sha256)
 
         elif args.command == "event-delete":
-            gws_adapter.delete_event(args.calendar, args.event, gws_path=gws_path)
+            gws_adapter.delete_event(args.calendar, args.event, gws_path=gws_path, expected_sha256=gws_sha256)
 
         elif args.command == "task-add":
             body = {"title": args.title}
             if args.due:
                 body["due"] = f"{args.due}T00:00:00.000Z"
-            gws_adapter.insert_task(args.list, body, gws_path=gws_path)
+            gws_adapter.insert_task(args.list, body, gws_path=gws_path, expected_sha256=gws_sha256)
 
         elif args.command == "task-complete":
             gws_adapter.patch_task(
                 args.list, args.task,
                 {"status": "needsAction" if args.undo else "completed"},
-                gws_path=gws_path,
+                gws_path=gws_path, expected_sha256=gws_sha256,
             )
 
         elif args.command == "task-delete":
-            gws_adapter.delete_task(args.list, args.task, gws_path=gws_path)
+            gws_adapter.delete_task(args.list, args.task, gws_path=gws_path, expected_sha256=gws_sha256)
 
         else:
             return _fail("usage", f"unknown command {args.command}")

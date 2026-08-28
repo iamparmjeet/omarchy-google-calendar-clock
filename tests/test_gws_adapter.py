@@ -5,6 +5,7 @@ returns canned JSON for each classification. No network, no real credentials.
 """
 
 import os
+import hashlib
 import stat
 import sys
 import tempfile
@@ -118,6 +119,9 @@ class TestGwsAdapter(unittest.TestCase):
     def _gws(self):
         return str(self.fake)
 
+    def _digest(self):
+        return hashlib.sha256(self.fake.read_bytes()).hexdigest()
+
     def test_list_calendars(self):
         cals = gws_adapter.list_calendars(self._gws())
         self.assertEqual(cals[0]["id"], "primary")
@@ -194,6 +198,13 @@ class TestGwsAdapter(unittest.TestCase):
         with mock.patch.object(gws_adapter.shutil, "which", return_value=None):
             with self.assertRaises(gws_adapter.GwsNotFound):
                 gws_adapter.run("calendar", "calendarList", "list", gws_path="/no/such/gws")
+
+    def test_gws_path_rejects_changed_digest(self):
+        with self.assertRaises(gws_adapter.GwsNotFound):
+            gws_adapter.run(
+                "calendar", "calendarList", "list", gws_path=self._gws(),
+                expected_sha256="0" * 64,
+            )
 
     def test_insert_event_body(self):
         ev = gws_adapter.insert_event("primary", {"summary": "x"}, gws_path=self._gws())

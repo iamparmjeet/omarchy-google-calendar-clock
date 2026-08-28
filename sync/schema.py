@@ -34,6 +34,7 @@ MAX_NOTES_CHARS = 4096
 MAX_URL_CHARS = 2048
 MAX_SYNC_MESSAGE_CHARS = 2048
 MAX_EVENT_SPAN_DAYS = 90
+MAX_ID_CHARS = 512
 
 
 def clip(value: Any, limit: int) -> str:
@@ -99,6 +100,10 @@ def _missing(obj: dict, field: str) -> bool:
     return obj.get(field) is None or obj.get(field) == ""
 
 
+def valid_id(value: Any) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= MAX_ID_CHARS
+
+
 def validate_state(state: Any) -> list[str]:
     """Validate a state document against the v1 schema.
 
@@ -154,8 +159,8 @@ def validate_calendar(cal: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(cal, dict):
         return ["must be an object"]
-    if not cal.get("id"):
-        errors.append("missing id")
+    if not valid_id(cal.get("id")):
+        errors.append("id must be a non-empty string within the length limit")
     if not cal.get("name"):
         errors.append("missing name")
     if "visible" in cal and not isinstance(cal.get("visible"), bool):
@@ -173,6 +178,10 @@ def validate_event(ev: Any) -> list[str]:
     for field in EVENT_REQUIRED:
         if field not in ev:
             errors.append(f"missing required field '{field}'")
+
+    for field in ("id", "calendarId"):
+        if field in ev and not valid_id(ev.get(field)):
+            errors.append(f"{field} must be a non-empty string within the length limit")
 
     if "allDay" in ev and not isinstance(ev.get("allDay"), bool):
         errors.append("allDay must be a boolean")
@@ -200,8 +209,8 @@ def validate_tasklist(tl: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(tl, dict):
         return ["must be an object"]
-    if not tl.get("id"):
-        errors.append("missing id")
+    if not valid_id(tl.get("id")):
+        errors.append("id must be a non-empty string within the length limit")
     if not tl.get("title"):
         errors.append("missing title")
     return errors
@@ -215,6 +224,10 @@ def validate_task(task: Any) -> list[str]:
     for field in TASK_REQUIRED:
         if field not in task:
             errors.append(f"missing required field '{field}'")
+
+    for field in ("id", "listId"):
+        if field in task and not valid_id(task.get(field)):
+            errors.append(f"{field} must be a non-empty string within the length limit")
 
     if "status" in task and task.get("status") not in TASK_STATUSES:
         errors.append(f"status must be one of {TASK_STATUSES}")

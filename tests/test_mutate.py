@@ -1,6 +1,7 @@
 """Tests for the CRUD entrypoint (sync/mutate.py) against a fake gws."""
 
 import json
+import hashlib
 import os
 import stat
 import subprocess
@@ -79,7 +80,7 @@ class TestMutate(unittest.TestCase):
         cfg_dir = self.dir / "config" / "parm.clock"
         cfg_dir.mkdir(parents=True, exist_ok=True)
         (cfg_dir / "config.json").write_text(
-            json.dumps({"gwsPath": str(self.fake), "timezone": "Asia/Kolkata"}),
+            json.dumps({"gwsPath": str(self.fake), "gwsSha256": hashlib.sha256(self.fake.read_bytes()).hexdigest(), "timezone": "Asia/Kolkata"}),
             encoding="utf-8",
         )
         e["XDG_CONFIG_HOME"] = str(self.dir / "config")
@@ -167,6 +168,17 @@ class TestMutate(unittest.TestCase):
         r = self._run("task-delete", "--list", "default", "--task", "t1")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(self._method_calls("delete"))
+
+    def test_missing_gws_digest_blocks_mutation(self):
+        env = self._env()
+        config_path = self.dir / "config" / "parm.clock" / "config.json"
+        config_path.write_text(json.dumps({"gwsPath": str(self.fake), "timezone": "Asia/Kolkata"}), encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "sync" / "mutate.py"), "task-delete", "--list", "default", "--task", "t1"],
+            capture_output=True, text=True, env=env, timeout=60,
+        )
+        self.assertEqual(result.returncode, 4)
+        self.assertIn("gwsSha256", result.stderr)
 
     def test_event_add_late_start_end_clamped_same_day(self):
         # 23:30 + default 1h would cross midnight; end must clamp to 23:59

@@ -13,6 +13,7 @@ Rectangle {
   required property string fontFamily
 
   readonly property bool done: task.status === "completed"
+  property bool confirmingDelete: false
 
   signal toggled(var task)
   signal deleted(var task)
@@ -46,6 +47,24 @@ Rectangle {
 
     Item { width: Math.max(0, parent.width - (24 + 8 * 3 + 24 + 60) - (row.task.title.length * 6)); height: 1 }
 
-    PanelActionButton { anchors.verticalCenter: parent.verticalCenter; iconText: "󰆴"; tooltipText: "Delete task"; hoverColor: Color.urgent; foreground: row.foreground; fontFamily: row.fontFamily; onClicked: row.deleted(row.task) }
+    PanelActionButton {
+      anchors.verticalCenter: parent.verticalCenter
+      iconText: row.confirmingDelete ? "?" : "󰆴"
+      tooltipText: row.confirmingDelete ? "Click again to permanently delete" : "Delete task"
+      hoverColor: Color.urgent
+      foreground: row.foreground
+      fontFamily: row.fontFamily
+      onClicked: {
+        if (row.confirmingDelete) {
+          row.confirmingDelete = false
+          row.deleted(row.task)
+        } else {
+          row.confirmingDelete = true
+          confirmTimer.restart()
+        }
+      }
+    }
   }
+
+  Timer { id: confirmTimer; interval: 3000; repeat: false; onTriggered: row.confirmingDelete = false }
 }

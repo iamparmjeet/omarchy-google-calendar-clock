@@ -90,6 +90,25 @@ ask() {
   [[ "$ans" =~ ^[Yy] ]] || [[ "$ans" == "" ]]
 }
 
+safe_remove_dir() {
+  local target="$1"
+  local root="$2"
+  root="${root%/}"
+  if [[ -z "$target" || "$target" == "/" || "$root" != /* || "$target" != "$root/parm.clock" || -L "$target" ]]; then
+    warn "refusing to remove unsafe path: $target"
+    return 1
+  fi
+  if [[ -e "$target" && ! -d "$target" ]]; then
+    warn "refusing to remove non-directory path: $target"
+    return 1
+  fi
+  if [[ -e "$target" && "$(stat -c '%u' -- "$target" 2>/dev/null || printf '%s' -1)" != "$(id -u)" ]]; then
+    warn "refusing to remove directory not owned by the current user: $target"
+    return 1
+  fi
+  run rm -rf -- "$target"
+}
+
 main() {
   info "Stopping and disabling the sync timer…"
   run systemctl --user disable --now parm.clock-sync.timer 2>/dev/null \
@@ -106,14 +125,16 @@ main() {
   run systemctl --user daemon-reload
 
   if [[ -d "$CONFIG_DIR" ]]; then
-    run rm -rf "$CONFIG_DIR"
-    ok "removed config (~/.config/parm.clock)"
+    if safe_remove_dir "$CONFIG_DIR" "${XDG_CONFIG_HOME:-$HOME/.config}"; then
+      ok "removed config (~/.config/parm.clock)"
+    fi
   fi
 
   if $PURGE_DATA; then
     if [[ -d "$STATE_DIR" ]]; then
-      run rm -rf "$STATE_DIR"
-      ok "removed cached state (~/.local/state/parm.clock)"
+      if safe_remove_dir "$STATE_DIR" "${XDG_STATE_HOME:-$HOME/.local/state}"; then
+        ok "removed cached state (~/.local/state/parm.clock)"
+      fi
     fi
   else
     info "cached state kept (re-run with --purge-data to remove it)."
@@ -148,7 +169,7 @@ main() {
       if ask "Delete $GWS_DIR (gws client_secret + token cache)?"; then
         # Try graceful logout first (revokes local token, keeps client_secret for reuse)
         if command -v gws >/dev/null 2>&1; then
-          run gws auth logout 2>/dev/null || true
+          run gws auth logout 2>/dev/null || warn "gws logout failed; local credentials will still be removed"
         fi
         run rm -rf "$GWS_DIR"
         ok "removed $GWS_DIR"
@@ -160,13 +181,8 @@ main() {
     fi
     # gcloud credentials — optional, only if gcloud is present
     if [[ -d "$GCLOUD_DIR" ]]; then
-      if ask "Revoke all gcloud accounts on this machine (gcloud auth revoke --all) and keep $GCLOUD_DIR?"; then
-        if command -v gcloud >/dev/null 2>&1; then
-          run gcloud auth revoke --all 2>/dev/null || true
-        fi
-        # Keep GCLOUD_DIR by default; only delete if user confirms second prompt
-        info "gcloud config kept at $GCLOUD_DIR (remove manually with rm -rf $GCLOUD_DIR if needed)"
-      fi
+      info "gcloud config kept at $GCLOUD_DIR; parm.clock will not revoke machine-wide gcloud credentials."
+      info "Revoke individual accounts manually with: gcloud auth revoke <account>"
     fi
     warn "Online revoke still required: https://myaccount.google.com/permissions → remove 'gws CLI' / 'omarchy-clock' to force fresh consent."
     warn "If OAuth client was in Testing mode, also remove test user at https://console.cloud.google.com/apis/credentials/consent"

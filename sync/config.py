@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -62,6 +63,7 @@ DEFAULT_CONFIG = {
     "pastDays": 7,
     "futureDays": 60,
     "gwsPath": "/usr/bin/gws",
+    "gwsSha256": "",
     "syncIntervalMin": 15,
     "tasklistIds": [],  # empty = all tasklists
 }
@@ -136,6 +138,10 @@ def validate_config(cfg: dict) -> list[str]:
         errors.append("gwsPath must be a non-empty string")
     elif not os.path.isabs(gws):
         errors.append("gwsPath must be an absolute path")
+
+    digest = cfg.get("gwsSha256", "")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+        errors.append("gwsSha256 must be a SHA-256 hex digest; rerun setup.sh")
 
     if not isinstance(cfg.get("tasklistIds"), list):
         errors.append("tasklistIds must be a list")

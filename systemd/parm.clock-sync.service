@@ -11,6 +11,12 @@ Type=oneshot
 ExecStart=/usr/bin/env python3 %h/.config/omarchy/plugins/parm.clock/sync/sync.py
 TimeoutStartSec=600
 Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/parm.clock %h/.config/parm.clock %h/.config/gws
+WorkingDirectory=/
 
 [Install]
 WantedBy=default.target

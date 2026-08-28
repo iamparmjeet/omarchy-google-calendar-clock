@@ -240,7 +240,7 @@ Panel {
     }
   }
   function runMutate(args) {
-    if (mutateProc.running) { console.warn("parm.clock runMutate blocked, already running", args.length ? args[0] : "unknown", "args:", args.length); return }
+    if (mutateProc.running) { console.warn("parm.clock runMutate blocked", args.length ? args[0] : "unknown", "argument count:", args.length); return }
     mutateOutput = ""
     var cmd = ["python3", root.mutatePath].concat(args)
     mutateProc.command = cmd
@@ -288,7 +288,7 @@ Panel {
   // Event links are organizer-controlled data (a shared calendar's
   // conferenceData can carry arbitrary entry-point URIs), so only known-safe
   // schemes are opened — never via a shell, always through Qt's opener.
-  readonly property var allowedUrlSchemes: ["https:", "http:", "meet:", "zoommtg:", "tel:", "mailto:"]
+  readonly property var allowedUrlSchemes: ["https:"]
   // Every outbound URL goes through here, whatever built it, so the scheme
   // allowlist cannot be bypassed by adding a new call site later.
   function openUrlSafely(url) {
@@ -299,6 +299,12 @@ Panel {
     // group excludes the colon, so compare in the list's own form.
     if (root.allowedUrlSchemes.indexOf(scheme + ":") === -1) {
       console.warn("parm.clock refused to open URL with untrusted scheme:", scheme || "(no scheme)")
+      return
+    }
+    var hostMatch = /^https:\/\/([^/]+)(?:\/|$)/i.exec(url)
+    var host = hostMatch ? hostMatch[1].toLowerCase() : ""
+    if (host !== "google.com" && !host.endsWith(".google.com")) {
+      console.warn("parm.clock refused to open non-Google URL")
       return
     }
     Qt.openUrlExternally(url)

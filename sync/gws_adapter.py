@@ -15,6 +15,7 @@ tokens; we only invoke it and parse its JSON.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import selectors
 import shutil
@@ -69,8 +70,8 @@ class GwsNotFound(GwsError):
         super().__init__(message, "missing")
 
 
-def _find_gws(path_override: Optional[str] = None) -> str:
-    """Locate the gws binary, honoring an explicit path override."""
+def _find_gws(path_override: Optional[str] = None, expected_sha256: Optional[str] = None) -> str:
+    """Locate a private executable and optionally verify its recorded digest."""
     candidates = [path_override] if path_override else []
     candidates.append(shutil.which("gws"))
     for candidate in candidates:
@@ -86,6 +87,16 @@ def _find_gws(path_override: Optional[str] = None) -> str:
             and not (info.st_mode & 0o022)
             and os.access(candidate, os.X_OK)
         ):
+            if expected_sha256:
+                digest = hashlib.sha256()
+                try:
+                    with open(candidate, "rb") as executable:
+                        for chunk in iter(lambda: executable.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                except OSError:
+                    continue
+                if digest.hexdigest().lower() != expected_sha256.lower():
+                    continue
             return candidate
     raise GwsNotFound("gws is not installed or no trusted executable was found")
 
@@ -94,7 +105,7 @@ def _extract_error(raw: str) -> dict:
     """Pull the ``error`` object out of a raw gws output string."""
     try:
         data = json.loads(raw)
-        if isinstance(data, dict) and "error" in data:
+        if isinstance(data, dict) and isinstance(data.get("error"), dict):
             return data["error"]
     except (ValueError, TypeError):
         pass
@@ -133,12 +144,12 @@ def _run_capped(cmd: list[str], *, timeout: float) -> tuple[int, str, str]:
                     open_streams -= 1
                     continue
                 buf = chunks[key.fileobj]
-                buf.extend(chunk)
-                if len(buf) > MAX_RESPONSE_BYTES:
+                if len(buf) + len(chunk) > MAX_RESPONSE_BYTES:
                     raise GwsError(
                         f"gws output exceeded {MAX_RESPONSE_BYTES} bytes (runaway response)",
                         "limit",
                     )
+                buf.extend(chunk)
         proc.wait(timeout=max(0.0, deadline - time.monotonic()))
         return (
             proc.returncode,
@@ -167,6 +178,7 @@ def run(
     body: Optional[dict] = None,
     *,
     gws_path: Optional[str] = None,
+    expected_sha256: Optional[str] = None,
     timeout: float = 120.0,
 ) -> dict:
     """Invoke ``gws <service> <resource> <method>`` and return parsed JSON.
@@ -177,7 +189,7 @@ def run(
         GwsError      on validation/discovery/internal/limit failures.
         GwsNotFound   if gws is missing.
     """
-    exe = _find_gws(gws_path)
+    exe = _find_gws(gws_path, expected_sha256)
 
     cmd = [exe, service, resource, method]
     if params:
@@ -217,7 +229,7 @@ def run(
     # Non-zero, non-auth exit.
     err = _extract_error(stdout) or _extract_error(stderr)
     reason = err.get("reason")
-    message = err.get("message") or f"gws exited with code {proc_returncode}"
+    message = err.get("message") if isinstance(err.get("message"), str) else f"gws exited with code {proc_returncode}"
 
     if reason == "authError" or err.get("code") == 401:
         raise AuthError(message, err.get("code"))
@@ -234,14 +246,14 @@ def _looks_like_json(text: str) -> bool:
 # Typed helpers for the exact resources we use.
 # ---------------------------------------------------------------------------
 
-def auth_status(gws_path: Optional[str] = None) -> dict:
+def auth_status(gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> dict:
     """``gws auth status`` -> dict with ``auth_method`` (may be ``none``).
 
     Note: this is a two-word subcommand (``gws auth status``), not the usual
     ``<service> <resource> <method>`` shape, and it exits 0 even when
     unauthenticated — callers must inspect ``auth_method``.
     """
-    exe = _find_gws(gws_path)
+    exe = _find_gws(gws_path, expected_sha256)
     returncode, out, err_out = _run_capped([exe, "auth", "status"], timeout=30.0)
     payload = (out or err_out).strip()
     if returncode != 0:
@@ -266,6 +278,7 @@ def _list_all(
     params: dict,
     *,
     gws_path: Optional[str] = None,
+    expected_sha256: Optional[str] = None,
 ) -> list[dict]:
     """Page through a gws ``list`` method until ``nextPageToken`` is exhausted.
 
@@ -285,7 +298,7 @@ def _list_all(
         p = dict(params)
         if page_token:
             p["pageToken"] = page_token
-        data = run(service, resource, method, params=p, gws_path=gws_path)
+        data = run(service, resource, method, params=p, gws_path=gws_path, expected_sha256=expected_sha256)
         if not isinstance(data, dict):
             return items
         page_items = data.get("items", []) or []
@@ -303,9 +316,9 @@ def _list_all(
             return items
 
 
-def list_calendars(gws_path: Optional[str] = None) -> list[dict]:
+def list_calendars(gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> list[dict]:
     """``gws calendar calendarList list`` -> list of CalendarListEntry dicts."""
-    return _list_all("calendar", "calendarList", "list", {}, gws_path=gws_path)
+    return _list_all("calendar", "calendarList", "list", {}, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
 def list_events(
@@ -316,6 +329,7 @@ def list_events(
     single_events: bool = True,
     order_by: str = "startTime",
     gws_path: Optional[str] = None,
+    expected_sha256: Optional[str] = None,
 ) -> list[dict]:
     """``gws calendar events list`` within [timeMin, timeMax)."""
     params = {
@@ -326,12 +340,12 @@ def list_events(
         "orderBy": order_by,
         "maxResults": 2500,
     }
-    return _list_all("calendar", "events", "list", params, gws_path=gws_path)
+    return _list_all("calendar", "events", "list", params, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
-def list_tasklists(gws_path: Optional[str] = None) -> list[dict]:
+def list_tasklists(gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> list[dict]:
     """``gws tasks tasklists list`` -> list of TaskList dicts."""
-    return _list_all("tasks", "tasklists", "list", {"maxResults": 100}, gws_path=gws_path)
+    return _list_all("tasks", "tasklists", "list", {"maxResults": 100}, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
 def list_tasks(
@@ -341,6 +355,7 @@ def list_tasks(
     due_max: Optional[str] = None,
     show_completed: bool = False,
     gws_path: Optional[str] = None,
+    expected_sha256: Optional[str] = None,
 ) -> list[dict]:
     """``gws tasks tasks list`` for one task list."""
     params: dict[str, Any] = {
@@ -352,41 +367,41 @@ def list_tasks(
         params["dueMin"] = due_min
     if due_max:
         params["dueMax"] = due_max
-    return _list_all("tasks", "tasks", "list", params, gws_path=gws_path)
+    return _list_all("tasks", "tasks", "list", params, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
 # Write operations (used by the CRUD wiring in a later phase).
 
-def insert_event(calendar_id: str, event: dict, *, gws_path: Optional[str] = None) -> dict:
+def insert_event(calendar_id: str, event: dict, *, gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> dict:
     """``gws calendar events insert``."""
-    return run("calendar", "events", "insert", params={"calendarId": calendar_id}, body=event, gws_path=gws_path)
+    return run("calendar", "events", "insert", params={"calendarId": calendar_id}, body=event, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
-def patch_event(calendar_id: str, event_id: str, patch: dict, *, gws_path: Optional[str] = None) -> dict:
+def patch_event(calendar_id: str, event_id: str, patch: dict, *, gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> dict:
     """``gws calendar events patch``."""
-    return run("calendar", "events", "patch", params={"calendarId": calendar_id, "eventId": event_id}, body=patch, gws_path=gws_path)
+    return run("calendar", "events", "patch", params={"calendarId": calendar_id, "eventId": event_id}, body=patch, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
-def delete_event(calendar_id: str, event_id: str, *, gws_path: Optional[str] = None) -> dict:
+def delete_event(calendar_id: str, event_id: str, *, gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> dict:
     """``gws calendar events delete``."""
-    return run("calendar", "events", "delete", params={"calendarId": calendar_id, "eventId": event_id}, gws_path=gws_path)
+    return run("calendar", "events", "delete", params={"calendarId": calendar_id, "eventId": event_id}, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
-def quick_add_event(calendar_id: str, text: str, *, gws_path: Optional[str] = None) -> dict:
+def quick_add_event(calendar_id: str, text: str, *, gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> dict:
     """``gws calendar events quickAdd``."""
-    return run("calendar", "events", "quickAdd", params={"calendarId": calendar_id, "text": text}, gws_path=gws_path)
+    return run("calendar", "events", "quickAdd", params={"calendarId": calendar_id, "text": text}, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
-def insert_task(tasklist_id: str, task: dict, *, gws_path: Optional[str] = None) -> dict:
+def insert_task(tasklist_id: str, task: dict, *, gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> dict:
     """``gws tasks tasks insert``."""
-    return run("tasks", "tasks", "insert", params={"tasklist": tasklist_id}, body=task, gws_path=gws_path)
+    return run("tasks", "tasks", "insert", params={"tasklist": tasklist_id}, body=task, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
-def patch_task(tasklist_id: str, task_id: str, patch: dict, *, gws_path: Optional[str] = None) -> dict:
+def patch_task(tasklist_id: str, task_id: str, patch: dict, *, gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> dict:
     """``gws tasks tasks patch``."""
-    return run("tasks", "tasks", "patch", params={"tasklist": tasklist_id, "task": task_id}, body=patch, gws_path=gws_path)
+    return run("tasks", "tasks", "patch", params={"tasklist": tasklist_id, "task": task_id}, body=patch, gws_path=gws_path, expected_sha256=expected_sha256)
 
 
-def delete_task(tasklist_id: str, task_id: str, *, gws_path: Optional[str] = None) -> dict:
+def delete_task(tasklist_id: str, task_id: str, *, gws_path: Optional[str] = None, expected_sha256: Optional[str] = None) -> dict:
     """``gws tasks tasks delete``."""
-    return run("tasks", "tasks", "delete", params={"tasklist": tasklist_id, "task": task_id}, gws_path=gws_path)
+    return run("tasks", "tasks", "delete", params={"tasklist": tasklist_id, "task": task_id}, gws_path=gws_path, expected_sha256=expected_sha256)
