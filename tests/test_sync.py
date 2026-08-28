@@ -185,7 +185,8 @@ class TestSyncPipeline(unittest.TestCase):
         os.environ["FAKE_GWS_AUTH"] = "ok"
         cfg = self._cfg()
         cfg["gwsPath"] = "/no/such/gws"
-        code = sync.run_sync(cfg, gws_path="/no/such/gws", state_path=self.state_path)
+        with mock.patch.object(sync.gws_adapter.shutil, "which", return_value=None):
+            code = sync.run_sync(cfg, gws_path="/no/such/gws", state_path=self.state_path)
         self.assertEqual(code, 5)
         state = json.loads(self.state_path.read_text())
         self.assertEqual(validate_state(state), [])
@@ -275,11 +276,12 @@ class TestSyncPipeline(unittest.TestCase):
         self.assertEqual([event["id"] for event in state["events"]], ["valid"])
 
     def test_failure_message_is_clipped(self):
-        code = sync.run_sync(
-            {"timezone": "UTC", "gwsPath": "/no/such/gws"},
-            gws_path="/no/such/gws",
-            state_path=self.state_path,
-        )
+        with mock.patch.object(sync.gws_adapter.shutil, "which", return_value=None):
+            code = sync.run_sync(
+                {"timezone": "UTC", "gwsPath": "/no/such/gws"},
+                gws_path="/no/such/gws",
+                state_path=self.state_path,
+            )
         self.assertEqual(code, 5)
         state = json.loads(self.state_path.read_text())
         self.assertLessEqual(len(state["syncStatus"]["message"]), 512)

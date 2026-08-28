@@ -191,8 +191,9 @@ class TestGwsAdapter(unittest.TestCase):
         self.assertEqual(ctx.exception.kind, "gws")
 
     def test_missing_gws(self):
-        with self.assertRaises(gws_adapter.GwsNotFound):
-            gws_adapter.run("calendar", "calendarList", "list", gws_path="/no/such/gws")
+        with mock.patch.object(gws_adapter.shutil, "which", return_value=None):
+            with self.assertRaises(gws_adapter.GwsNotFound):
+                gws_adapter.run("calendar", "calendarList", "list", gws_path="/no/such/gws")
 
     def test_insert_event_body(self):
         ev = gws_adapter.insert_event("primary", {"summary": "x"}, gws_path=self._gws())

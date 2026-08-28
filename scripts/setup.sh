@@ -315,7 +315,7 @@ write_config() {
   fi
 
   local gws_path
-  gws_path="$(command -v gws)"
+  gws_path="$(readlink -f -- "$(command -v gws)")"
 
   # Validate the zone name before it is baked into JSON: a weird /etc/timezone
   # (multiline, quotes) would otherwise write a config.json that load_config
