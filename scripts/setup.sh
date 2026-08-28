@@ -27,7 +27,18 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/parm.clock"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
-PROJECT="${PARM_CLOCK_PROJECT:-omarchy-clock}"
+if [[ -n "${PARM_CLOCK_PROJECT:-}" ]]; then
+  PROJECT="$PARM_CLOCK_PROJECT"
+else
+  # GCP project ids are globally unique; the previous default "omarchy-clock"
+  # is already taken, so every new user hit PERMISSION_DENIED on
+  # `gcloud services enable` with a misleading IAM error. Generate a unique
+  # default that still hints at the owner (6-30 chars, lowercase, hyphens).
+  _suffix="$(head -c4 /dev/urandom 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n' | head -c8)"
+  if [[ -z "$_suffix" ]]; then _suffix="$(date +%s | tail -c5)"; fi
+  PROJECT="omarchy-clock-${_suffix,,}"
+  unset _suffix
+fi
 TIMEZONE="${PARM_CLOCK_TIMEZONE:-}"
 DRY_RUN=false
 AUTO_YES=false
@@ -233,13 +244,24 @@ ensure_auth() {
     echo "   would run: gws auth setup --project $PROJECT"
   else
     # Don't die on setup failure — it may require manual console steps but auth may already be ok.
-    if ! gws auth setup --project "$PROJECT"; then
+    _setup_out="$(mktemp)"
+    if ! gws auth setup --project "$PROJECT" 2>&1 | tee "$_setup_out"; then
+      # GCP project ids are globally unique. gcloud reports a missing project and
+      # an inaccessible (already-taken) project with the same PERMISSION_DENIED,
+      # which users misread as an IAM issue. Detect that case explicitly.
+      if grep -qiE "already in use|already exists|does not have permission to access projects instance|PERMISSION_DENIED.*$PROJECT" "$_setup_out"; then
+        warn "Project id '$PROJECT' is already taken globally (or you lack access to it)."
+        warn "GCP project ids must be globally unique — 'omarchy-clock' is already registered."
+        die "Try a unique id: ./scripts/setup.sh --project omarchy-clock-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' ' | head -c6)  or  PARM_CLOCK_PROJECT=my-unique-id ./scripts/setup.sh"
+      fi
       warn "gws auth setup failed (see above). If you already have a client_secret.json or OAuth token, this is expected — continuing to auth check."
       if gws auth status 2>/dev/null | grep -q '"auth_method": "oauth2"'; then
         ok "already authenticated via OAuth2 — continuing."
+        rm -f "$_setup_out"
         return 0
       fi
     fi
+    rm -f "$_setup_out"
   fi
 
   info "Checking authentication state…"
