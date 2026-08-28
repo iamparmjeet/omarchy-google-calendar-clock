@@ -321,7 +321,9 @@ function eventIndex(events) {
   var list = events || []
   for (var i = 0; i < list.length; i++) {
     var ev = list[i]
-    var days = dayRange(ev.dateKey, ev.allDay ? ev.end : ev.dateKey)
+    // Timed events span days exactly as all-day ones do; collapsing them to
+    // the start day was why a two-day meeting only ever showed on day one.
+    var days = dayRange(ev.dateKey, ev.endDateKey || (ev.allDay ? ev.end : ev.dateKey))
     for (var d = 0; d < days.length; d++) {
       var key = days[d]
       if (!index[key]) index[key] = []
@@ -658,6 +660,22 @@ function eventTimeRange(ev) {
   return e ? s + "–" + e[1] : s
 }
 
+// True when the event's last day is not its first. Without this, a Wednesday
+// 14:30 that ends Friday renders as "14:30–20:30" and reads as one afternoon.
+// Kept boolean rather than formatted: month naming is the QML's job, and this
+// file stays Qt-free so it can be unit tested under node.
+function eventSpansDays(ev) {
+  if (!ev || !ev.dateKey) return false
+  var endKey = ev.endDateKey || ""
+  return endKey !== "" && endKey !== ev.dateKey
+}
+
+// The end time alone ("20:30"), for a caller that will prefix its own day.
+function eventEndTimeText(ev) {
+  var e = /T(\d{2}:\d{2})/.exec(String((ev && ev.end) || ""))
+  return e ? e[1] : ""
+}
+
 // The key `delta` weeks away from `key`, on the same weekday.
 function stepWeek(key, delta) {
   var d = keyToDate(key)
@@ -775,6 +793,8 @@ if (typeof module !== "undefined") {
     isWeekendKey: isWeekendKey,
     startTimeText: startTimeText,
     eventTimeRange: eventTimeRange,
+    eventSpansDays: eventSpansDays,
+    eventEndTimeText: eventEndTimeText,
     stepWeek: stepWeek,
     weekHeadingParts: weekHeadingParts,
     nextHalfHourHHMM: nextHalfHourHHMM,

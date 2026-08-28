@@ -280,6 +280,30 @@ def normalize_event(raw: dict, calendar_id: str, timezone: str) -> dict:
             except Exception:
                 dk = ""
 
+    # The last local day the event occupies. Emitted here rather than derived in
+    # the UI, because the local day of an RFC3339 end is a timezone question and
+    # slicing the first ten characters answers it with the organizer's offset
+    # instead of the viewer's.
+    if all_day:
+        edk = end_raw or dk
+    else:
+        edk = dk
+        end_dt = parse_datetime(end_raw)
+        if end_dt is not None:
+            try:
+                from zoneinfo import ZoneInfo
+                end_local = end_dt.astimezone(ZoneInfo(timezone))
+                # An event ending at exactly midnight belongs to the day that
+                # just closed, not to the one starting — 22:00-00:00 is one
+                # evening, not two days.
+                if end_local.hour == 0 and end_local.minute == 0:
+                    end_local = end_local - _timedelta_days(1)
+                edk = local_date_key(end_local.date())
+            except Exception:
+                edk = dk
+        if edk < dk:
+            edk = dk
+
     return {
         "id": raw.get("id", ""),
         "calendarId": calendar_id,
@@ -288,6 +312,7 @@ def normalize_event(raw: dict, calendar_id: str, timezone: str) -> dict:
         "end": end_raw or "",
         "allDay": all_day,
         "dateKey": dk,
+        "endDateKey": edk,
         "location": clip(raw.get("location") or "", MAX_TITLE_CHARS),
         "description": clip(raw.get("description") or "", MAX_NOTES_CHARS),
         "htmlLink": clip(raw.get("htmlLink") or "", MAX_URL_CHARS),

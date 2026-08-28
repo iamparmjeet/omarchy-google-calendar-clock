@@ -22,6 +22,26 @@ Column {
   readonly property var headingParts: Model.weekHeadingParts(weekKeys)
   readonly property bool currentWeek: weekKeys.indexOf(todayKey) !== -1
 
+  // The date rail holds "<day> · <month>". Today is drawn bold and larger, so a
+  // rail sized for the regular weight let today's text spill into the event
+  // column. Two independent lower bounds, because neither alone is reliable:
+  // the ratio rescales the original 74 by how much bigger today's glyphs are
+  // (it holds even if TextMetrics reports 0 before the font resolves), and the
+  // measurement catches a wide month abbreviation the ratio cannot predict.
+  // Both columns derive from railWidth so the two can never disagree.
+  readonly property int dateFontToday: 19
+  readonly property int dateFontNormal: 16
+  readonly property int railWidth: Math.ceil(Math.max(
+    Style.space(74) * (dateFontToday / dateFontNormal),
+    railMetrics.advanceWidth + Style.space(6)))
+
+  property TextMetrics railMetrics: TextMetrics {
+    font.family: view.fontFamily
+    font.pixelSize: view.dateFontToday
+    font.bold: true
+    text: "88 · " + Qt.formatDate(Model.keyToDate((view.weekKeys && view.weekKeys.length) ? view.weekKeys[0] : view.todayKey), "MMM")
+  }
+
   signal selectDay(string key)
   signal stepWeek(int delta)
   signal backToTodayRequested()
@@ -102,18 +122,18 @@ Column {
           spacing: Style.space(10)
 
           Column {
-            width: Style.space(74)
+            width: view.railWidth
             spacing: Style.space(1)
             anchors.verticalCenter: parent.verticalCenter
             Text { text: Qt.formatDate(dayCard.keyDate, "ddd").toUpperCase(); color: dayCard.isToday ? Style.selectedStateColor(view.foreground, Color.accent) : dayCard.isWeekend ? Qt.darker(view.foreground, 1.55) : Qt.darker(view.foreground, 1.3); font.family: view.fontFamily; font.pixelSize: Style.font.caption; font.letterSpacing: 1; font.bold: dayCard.isToday || dayCard.isSelected }
-            Text { text: Model.dayNum(dayCard.key) + " · " + Qt.formatDate(dayCard.keyDate, "MMM"); color: dayCard.isSelected ? Style.selectedStateColor(view.foreground, Color.accent) : view.foreground; font.family: view.fontFamily; font.pixelSize: dayCard.isToday ? 19 : 16; font.bold: dayCard.isToday || dayCard.isSelected }
+            Text { width: parent.width; elide: Text.ElideRight; text: Model.dayNum(dayCard.key) + " · " + Qt.formatDate(dayCard.keyDate, "MMM"); color: dayCard.isSelected ? Style.selectedStateColor(view.foreground, Color.accent) : view.foreground; font.family: view.fontFamily; font.pixelSize: dayCard.isToday ? view.dateFontToday : view.dateFontNormal; font.bold: dayCard.isToday || dayCard.isSelected }
             Text { text: dayCard.isToday ? "Today" : Model.relativeDayLabel(dayCard.key, view.todayKey); color: dayCard.isToday ? Color.accent : Qt.darker(view.foreground, 1.7); font.family: view.fontFamily; font.pixelSize: Style.font.caption - 1; font.italic: true; visible: text !== "" }
           }
 
           Rectangle { width: Style.spacing.hairline; height: dayRow.height; color: Qt.rgba(view.foreground.r, view.foreground.g, view.foreground.b, 0.10); anchors.verticalCenter: parent.verticalCenter }
 
           Column {
-            width: parent.width - Style.space(74) - Style.space(10) - Style.spacing.hairline - Style.space(6)
+            width: parent.width - view.railWidth - Style.space(10) - Style.spacing.hairline - Style.space(6)
             spacing: Style.space(4)
             anchors.verticalCenter: parent.verticalCenter
             Repeater {

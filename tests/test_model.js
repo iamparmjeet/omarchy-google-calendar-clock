@@ -333,7 +333,47 @@ function testNextHalfHour() {
   assert.strictEqual(Model.nextHalfHourHHMM(new Date(2026, 7, 20, 23, 50)), "00:00");
 }
 
+function testEventIndexSpansTimedMultiDay() {
+  // A timed event that ends two days later must appear on all three days.
+  // Before endDateKey the index collapsed it onto its start day alone.
+  const ev = {
+    id: "multi", calendarId: "primary", title: "Trip",
+    start: "2026-08-26T14:30:00-03:00", end: "2026-08-28T20:30:00-03:00",
+    allDay: false, dateKey: "2026-08-26", endDateKey: "2026-08-28",
+  };
+  const idx = Model.eventIndex([ev]);
+  assert.deepStrictEqual(
+    Object.keys(idx).sort(),
+    ["2026-08-26", "2026-08-27", "2026-08-28"]
+  );
+}
+
+function testEventIndexSingleDayUnchanged() {
+  const ev = {
+    id: "one", calendarId: "primary", title: "Standup",
+    start: "2026-08-26T09:00:00-03:00", end: "2026-08-26T09:15:00-03:00",
+    allDay: false, dateKey: "2026-08-26", endDateKey: "2026-08-26",
+  };
+  assert.deepStrictEqual(Object.keys(Model.eventIndex([ev])), ["2026-08-26"]);
+}
+
+function testEventSpansDays() {
+  assert.strictEqual(Model.eventSpansDays({ dateKey: "2026-08-26", endDateKey: "2026-08-28" }), true);
+  assert.strictEqual(Model.eventSpansDays({ dateKey: "2026-08-26", endDateKey: "2026-08-26" }), false);
+  // Events synced before endDateKey existed must not be treated as spanning.
+  assert.strictEqual(Model.eventSpansDays({ dateKey: "2026-08-26" }), false);
+}
+
+function testEventEndTimeText() {
+  assert.strictEqual(Model.eventEndTimeText({ end: "2026-08-28T20:30:00-03:00" }), "20:30");
+  assert.strictEqual(Model.eventEndTimeText({ end: "2026-08-28" }), "");
+}
+
 const tests = [
+  testEventIndexSpansTimedMultiDay,
+  testEventIndexSingleDayUnchanged,
+  testEventSpansDays,
+  testEventEndTimeText,
   testEventIndex,
   testEventsForDateAllDayFirst,
   testTaskDueDate,
