@@ -395,6 +395,22 @@ function testEventEndTimeText() {
   assert.strictEqual(Model.eventEndTimeText({ end: "2026-08-28" }), "");
 }
 
+function testNormalizedAllDayEditUsesInclusiveEnd() {
+  // The edit form receives the normalized schema, where `end` is the last
+  // visible day, not Google's exclusive API end.
+  const event = { allDay: true, dateKey: "2026-08-18", end: "2026-08-20" };
+  assert.strictEqual(event.end, "2026-08-20");
+  assert.strictEqual(Model.eventSpansDays({ dateKey: event.dateKey, endDateKey: event.end }), true);
+}
+
+function testEventIndexKeepsDifferentCalendarsWithSameId() {
+  const events = [
+    { id: "same", calendarId: "one", dateKey: "2026-08-20" },
+    { id: "same", calendarId: "two", dateKey: "2026-08-20" },
+  ];
+  assert.strictEqual(Model.eventIndex(events)["2026-08-20"].length, 2);
+}
+
 const tests = [
   testEventIndexSpansTimedMultiDay,
   testEventIndexSingleDayUnchanged,
@@ -402,6 +418,8 @@ const tests = [
   testEventIndexIgnoresMalformedEvents,
   testEventSpansDays,
   testEventEndTimeText,
+  testNormalizedAllDayEditUsesInclusiveEnd,
+  testEventIndexKeepsDifferentCalendarsWithSameId,
   testEventIndex,
   testEventsForDateAllDayFirst,
   testTaskDueDate,
