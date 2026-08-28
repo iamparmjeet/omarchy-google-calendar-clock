@@ -54,6 +54,31 @@ QtObject {
     onFileChanged: root.refresh()
   }
 
+  // Retry when the file was unreadable at startup (fresh install: state.json
+  // does not exist yet and FileView watching a missing file never fires on
+  // creation). The failure is expected exactly once, so a one-shot retry is
+  // enough; it is restarted on every unreadable read and stopped on success.
+  property Timer retryTimer: Timer {
+    interval: 3000
+    repeat: false
+    onTriggered: root.refresh()
+  }
+
+  // Directory watch catches creation of a previously-missing file (FileView on
+  // the file itself only reports writes to an existing inode). Together with
+  // the retry timer this covers both the polling and the event-driven path.
+  property FileView dirWatcher: FileView {
+    path: {
+      var p = String(root.path || "")
+      var idx = p.lastIndexOf("/")
+      return idx !== -1 ? p.slice(0, idx) : p
+    }
+    watchChanges: true
+    preload: false
+    printErrors: false
+    onFileChanged: root.refresh()
+  }
+
   property Process reader: Process {
     id: reader
     command: []
@@ -68,8 +93,10 @@ QtObject {
       if (raw.length > Model.MAX_STATE_CHARS || out === "__PARMCLOCK_STATE_UNREADABLE__") {
         console.warn("parm.clock: refusing state.json (over size ceiling or unreadable):", root.path)
         root.state = Model.parseState("")
+        retryTimer.restart()
         return
       }
+      retryTimer.stop()
       root.state = Model.parseState(out)
     }
   }
