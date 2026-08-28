@@ -62,7 +62,7 @@ DEFAULT_CONFIG = {
     "pastDays": 7,
     "futureDays": 60,
     "gwsPath": "/usr/bin/gws",
-    "syncIntervalMin": 5,
+    "syncIntervalMin": 15,
     "tasklistIds": [],  # empty = all tasklists
 }
 

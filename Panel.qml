@@ -45,6 +45,7 @@ Panel {
 
   readonly property bool showTaskBadge: setting("showTaskBadge", true)
   readonly property string badgeMode: setting("badgeCount", "dueToday")
+  readonly property int syncIntervalMin: Model.parseSyncInterval(setting("syncIntervalMin", Model.DEFAULT_SYNC_INTERVAL_MIN), Model.DEFAULT_SYNC_INTERVAL_MIN)
   property bool settingsVisible: false
   // Non-null while the detail view has replaced the calendar area. Held by id
   // rather than by reference so a sync that rewrites state.json re-resolves to
@@ -140,6 +141,10 @@ Panel {
     if (root.hostWidget && "settings" in root.hostWidget) root.hostWidget.settings = entry
     if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
       root.bar.shell.updateEntryInline(root.moduleName, entry)
+    if ("syncIntervalMin" in values && root.bar) {
+      var mins = Model.parseSyncInterval(values.syncIntervalMin, root.syncIntervalMin)
+      root.bar.run("python3 " + shellQuote(applyIntervalPath) + " " + mins + " >/dev/null 2>&1 &")
+    }
   }
   function setWeekStart(day) {
     var next = Model.normalizedWeekStart(day, root.weekStart)
@@ -207,6 +212,7 @@ Panel {
   function shellQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
   readonly property string syncPath: pluginPath("sync/sync.py")
   readonly property string mutatePath: pluginPath("sync/mutate.py")
+  readonly property string applyIntervalPath: pluginPath("sync/apply_interval.py")
   readonly property string primaryCalendarId: {
     var list = root.state.calendars
     var fallback = ""
@@ -654,6 +660,7 @@ Panel {
             showTaskBadge: root.showTaskBadge
             badgeMode: root.badgeMode
             showCompletedTasks: root.showCompletedTasks
+            syncIntervalMin: root.syncIntervalMin
             calendars: root.state.calendars
             hiddenCalendars: root.hiddenCalendars
             foreground: root.contentForeground

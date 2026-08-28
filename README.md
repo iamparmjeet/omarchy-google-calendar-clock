@@ -58,7 +58,7 @@ settings persistence, gws plumbing), rendering is delegated to `Clock*` files
 plus leaf rows/cells). All Google-controlled strings render with
 `textFormat: Text.PlainText`.
 
-The QML never talks to Google. It reads a cached JSON file; writes go through `gws` and trigger a re-sync. A systemd user timer runs the sync every 5 minutes, so the widget stays up to date and works offline from cached data.
+The QML never talks to Google. It reads a cached JSON file; writes go through `gws` and trigger a re-sync. A systemd user timer runs the sync every 15 minutes by default, so the widget stays up to date and works offline from cached data.
 
 ---
 
@@ -100,7 +100,7 @@ What `setup.sh` does, in order:
 4. Verifies authentication (`gws auth status`);
 5. Writes `~/.config/parm.clock/config.json` (timezone, sync window, `gws` path) — **timezone is auto-detected** from `/etc/timezone` / `/etc/localtime`;
 6. Runs the first sync (`sync/sync.py`);
-7. Installs and enables the systemd user timer (`parm.clock-sync.timer` — every 5 min).
+7. Installs and enables the systemd user timer (`parm.clock-sync.timer` — every 15 min by default).
 
 > **Testing-mode OAuth note:** if your GCP OAuth client is in *Testing* mode, add your account as a test user (GCP → APIs & Services → OAuth consent screen → Test users), otherwise consent will be rejected.
 
@@ -192,7 +192,7 @@ Sync-only keys (written by `setup.sh` to `~/.config/parm.clock/config.json`):
 - `timezone` (e.g. `Asia/Kolkata`, `America/New_York`) — auto-detected
 - `pastDays` / `futureDays` — sync window (default 7 / 60)
 - `gwsPath` — absolute path to the `gws` binary
-- `syncIntervalMin` — informational; the timer interval is fixed at 5 min in the unit
+- `syncIntervalMin` — selected timer interval in minutes (5, 15, 30, 60, 120, or 240)
 - `tasklistIds` — optional task-list filter (empty = all)
 
 The sync engine bounds event expansion to 90 calendar days and caps total
@@ -201,7 +201,8 @@ but only the bounded display window is indexed.
 
 ## Security And Robustness
 
-Release `1.1.2` hardens the sync and installer boundaries. Remote event data
+Release `1.2.0` hardens the sync and installer boundaries and adds a selectable
+sync interval. Remote event data
 cannot force unbounded calendar-day expansion, malformed API records are
 skipped instead of crashing the worker, and sync failure text is bounded before
 it reaches the cache. The generated config and timer files use private,
@@ -210,6 +211,15 @@ atomic writes, while generated systemd paths are quoted safely.
 The plugin still runs as the logged-in user from a user-writable Omarchy plugin
 directory. Same-user malware can therefore replace plugin code or credentials;
 that is an inherent platform trust boundary, not a root-privilege boundary.
+
+The Settings panel's **Sync interval** control supports 5, 15, 30, 60, 120,
+and 240 minutes. Changing it updates the user timer immediately and persists
+the choice for future syncs. The default is 15 minutes. The timer remains a
+systemd user timer and can also be inspected with:
+
+```bash
+systemctl --user status parm.clock-sync.timer
+```
 
 > Calendar visibility is owned solely by the shell.json `hiddenCalendars` setting above — the sync fetches every calendar Google shows, so a hidden calendar can always be re-toggled from the panel's `⚙` settings.
 
@@ -304,7 +314,7 @@ python3 ~/.config/omarchy/plugins/parm.clock/sync/sync.py
 
 **New events go to the wrong calendar.** The panel writes to the calendar Google marks `primary` (never a read-only holiday calendar). Verify with `gws calendar calendarList list --params '{}'`.
 
-**Badge shows a stale count.** The timer syncs every 5 minutes; force one with `systemctl --user start parm.clock-sync.service`, or click the sync button (`↻`) in the panel header. Check the timer is active:
+**Badge shows a stale count.** The timer syncs every 15 minutes by default; force one with `systemctl --user start parm.clock-sync.service`, or click the sync button (`↻`) in the panel header. Check the timer is active:
 
 ```bash
 systemctl --user list-timers parm.clock-sync.timer

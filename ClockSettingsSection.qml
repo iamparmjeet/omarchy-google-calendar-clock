@@ -11,6 +11,7 @@ Column {
   required property bool showTaskBadge
   required property string badgeMode
   required property bool showCompletedTasks
+  required property int syncIntervalMin
   required property var calendars
   required property var hiddenCalendars
   required property color foreground
@@ -49,6 +50,22 @@ Column {
       { value: "all", label: "All incomplete" }
     ]
     onChanged: function(v) { section.changed({ badgeCount: v }) }
+  }
+
+  Dropdown {
+    label: "Sync interval"
+    value: String(section.syncIntervalMin)
+    foreground: section.foreground
+    fontFamily: section.fontFamily
+    options: [
+      { value: "5", label: "Every 5 min" },
+      { value: "15", label: "Every 15 min" },
+      { value: "30", label: "Every 30 min" },
+      { value: "60", label: "Every hour" },
+      { value: "120", label: "Every 2h" },
+      { value: "240", label: "Every 4h" }
+    ]
+    onChanged: function(v) { section.changed({ syncIntervalMin: parseInt(v, 10) }) }
   }
 
   Toggle {
