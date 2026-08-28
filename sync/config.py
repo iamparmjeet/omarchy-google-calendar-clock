@@ -61,7 +61,7 @@ DEFAULT_CONFIG = {
     "pastDays": 7,
     "futureDays": 60,
     "gwsPath": "/usr/bin/gws",
-    "syncIntervalMin": 5,
+    "syncIntervalMin": 15,
     "tasklistIds": [],  # empty = all tasklists
 }
 
@@ -78,6 +78,12 @@ def load_config(path: Optional[Path] = None) -> dict:
 
     A missing, malformed, or oversized file returns the defaults (with
     auto-detected timezone).
+
+    After ``config.json``, the shell's ``parm.clock`` entry in
+    ``~/.config/omarchy/shell.json`` is checked for a ``syncIntervalMin``
+    override — this is what the Settings dropdown writes via
+    ``persistSettings`` — so the UI can throttle the timer without editing
+    ``config.json`` by hand.
     """
     cfg = dict(DEFAULT_CONFIG)
     target = Path(path) if path else CONFIG_PATH
@@ -90,6 +96,46 @@ def load_config(path: Optional[Path] = None) -> dict:
         raw = json.loads(raw_bytes.decode("utf-8"))
         if isinstance(raw, dict):
             cfg.update({k: v for k, v in raw.items() if k in DEFAULT_CONFIG})
+    except (OSError, ValueError):
+        pass
+    # Shell.json override for syncIntervalMin (QML settings). This keeps the
+    # timer in sync with the dropdown without requiring the user to edit
+    # config.json. Only this key is mirrored — other sync keys stay in
+    # config.json.
+    try:
+        shell_path = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser() / "omarchy" / "shell.json"
+        # Also accept bare XDG_CONFIG_HOME without expanduser quirks.
+        if not shell_path.exists():
+            shell_path = Path.home() / ".config" / "omarchy" / "shell.json"
+        with shell_path.open("rb") as f:
+            raw_bytes = f.read(512 * 1024)  # shell.json is small; cap generously.
+        data = json.loads(raw_bytes.decode("utf-8"))
+        # shell.json may be array of entries or object with bar; find parm.clock
+        interval = None
+        if isinstance(data, dict):
+            # Try bar layout entries
+            bar = data.get("bar", {})
+            for anchor in ("center", "left", "right"):
+                for entry in bar.get("layout", {}).get(anchor, []) if isinstance(bar.get("layout"), dict) else []:
+                    if isinstance(entry, dict) and entry.get("id") == "parm.clock" and "syncIntervalMin" in entry:
+                        interval = entry.get("syncIntervalMin")
+            # Also try top-level entries list
+            for key in ("widgets", "plugins", "entries"):
+                for entry in data.get(key, []) if isinstance(data.get(key), list) else []:
+                    if isinstance(entry, dict) and entry.get("id") == "parm.clock" and "syncIntervalMin" in entry:
+                        interval = entry.get("syncIntervalMin")
+        elif isinstance(data, list):
+            for entry in data:
+                if isinstance(entry, dict) and entry.get("id") == "parm.clock" and "syncIntervalMin" in entry:
+                    interval = entry.get("syncIntervalMin")
+        if interval is not None:
+            # Validate before overriding — invalid values are ignored.
+            if isinstance(interval, int) and not isinstance(interval, bool) and 0 < interval <= 10080:
+                cfg["syncIntervalMin"] = interval
+            elif isinstance(interval, str) and interval.isdigit():
+                n = int(interval)
+                if 0 < n <= 10080:
+                    cfg["syncIntervalMin"] = n
     except (OSError, ValueError):
         pass
     return cfg

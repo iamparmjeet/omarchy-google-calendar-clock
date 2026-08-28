@@ -304,7 +304,7 @@ write_config() {
   "pastDays": 7,
   "futureDays": 60,
   "gwsPath": "$gws_path",
-  "syncIntervalMin": 5,
+  "syncIntervalMin": 15,
   "tasklistIds": []
 }
 EOF
@@ -346,6 +346,12 @@ install_systemd() {
     return
   fi
 
+  # Resolve the effective sync interval (config.json wins, else default 15).
+  local interval
+  interval="$(python3 -c 'from sync.config import load_config; print(load_config().get("syncIntervalMin", 15))' 2>/dev/null || echo 15)"
+  # Validate: must be one of the allowed steps, else fall back to 15.
+  case "$interval" in 5|15|30|60|120|240) ;; *) interval=15 ;; esac
+
   mkdir -p "$SYSTEMD_USER_DIR"
 
   cat > "$service_src" <<EOF
@@ -369,11 +375,11 @@ EOF
 
   cat > "$timer_src" <<EOF
 [Unit]
-Description=Sync Google Calendar and Tasks for parm.clock every 5 minutes
+Description=Sync Google Calendar and Tasks for parm.clock every ${interval} minutes
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=5min
+OnUnitActiveSec=${interval}min
 Persistent=true
 
 [Install]
@@ -382,7 +388,7 @@ EOF
 
   systemctl --user daemon-reload
   systemctl --user enable --now parm.clock-sync.timer
-  ok "timer enabled and started (sync every 5 min)."
+  ok "timer enabled and started (sync every ${interval} min)."
 }
 
 # ----------------------------------------------------------------- main

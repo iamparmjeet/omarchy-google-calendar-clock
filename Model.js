@@ -708,6 +708,29 @@ function visibleUpcomingGroups(index, startKey, days, hiddenCalendars) {
   }).filter(function(g) { return g.events.length > 0 })
 }
 
+// ---- Sync interval helpers (throttle API usage)
+
+var SYNC_INTERVAL_OPTIONS = [5, 15, 30, 60, 120, 240]
+var DEFAULT_SYNC_INTERVAL_MIN = 15
+
+function parseSyncInterval(value, fallback) {
+  var fb = Number(fallback)
+  if (!isFinite(fb) || fb <= 0) fb = DEFAULT_SYNC_INTERVAL_MIN
+  var n = Number(value)
+  if (!isFinite(n)) return fb
+  n = Math.round(n)
+  if (n <= 0 || n > 10080) return fb
+  return n
+}
+
+function syncIntervalLabel(minutes) {
+  var n = parseSyncInterval(minutes, DEFAULT_SYNC_INTERVAL_MIN)
+  if (n < 60) return "Every " + n + " min"
+  if (n === 60) return "Every hour"
+  if (n % 60 === 0) return "Every " + (n / 60) + "h"
+  return "Every " + Math.floor(n / 60) + "h " + (n % 60) + "m"
+}
+
 // Flat list of visible upcoming events (first `limit`), for the summary card.
 function upcomingSummary(index, startKey, days, hiddenCalendars, limit) {
   var out = []
@@ -780,6 +803,10 @@ if (typeof module !== "undefined") {
     nextHalfHourHHMM: nextHalfHourHHMM,
     visibleEventsOn: visibleEventsOn,
     visibleUpcomingGroups: visibleUpcomingGroups,
-    upcomingSummary: upcomingSummary
+    upcomingSummary: upcomingSummary,
+    SYNC_INTERVAL_OPTIONS: SYNC_INTERVAL_OPTIONS,
+    DEFAULT_SYNC_INTERVAL_MIN: DEFAULT_SYNC_INTERVAL_MIN,
+    parseSyncInterval: parseSyncInterval,
+    syncIntervalLabel: syncIntervalLabel
   }
 }
