@@ -109,6 +109,16 @@ class TestWindow(unittest.TestCase):
         self.assertIn(str(today + timedelta(days=61)), tmax)
 
 
+class TestSyncInterval(unittest.TestCase):
+    def test_default_interval_is_fifteen_minutes(self):
+        from sync.config import DEFAULT_CONFIG
+        self.assertEqual(DEFAULT_CONFIG["syncIntervalMin"], 15)
+
+    def test_timer_content_uses_requested_interval(self):
+        from sync.apply_interval import _timer_content
+        self.assertIn("OnUnitActiveSec=30min", _timer_content(30))
+
+
 class TestDedupeSort(unittest.TestCase):
     def test_dedupe(self):
         evs = [

@@ -336,7 +336,7 @@ write_config() {
   local tmp_config
   tmp_config="$(mktemp "$CONFIG_DIR/.config.json.XXXXXX")"
   if ! ( umask 077
-    python3 -c 'import json, sys; json.dump({"timezone": sys.argv[1], "pastDays": 7, "futureDays": 60, "gwsPath": sys.argv[2], "syncIntervalMin": 5, "tasklistIds": []}, sys.stdout, indent=2); sys.stdout.write("\\n")' "$TIMEZONE" "$gws_path" > "$tmp_config"
+    python3 -c 'import json, sys; json.dump({"timezone": sys.argv[1], "pastDays": 7, "futureDays": 60, "gwsPath": sys.argv[2], "syncIntervalMin": 15, "tasklistIds": []}, sys.stdout, indent=2); sys.stdout.write("\\n")' "$TIMEZONE" "$gws_path" > "$tmp_config"
   ); then
     rm -f -- "$tmp_config"
     die "could not write $CONFIG_FILE"
@@ -415,11 +415,11 @@ EOF
 
   cat > "$timer_src" <<EOF
 [Unit]
-Description=Sync Google Calendar and Tasks for parm.clock every 5 minutes
+Description=Sync Google Calendar and Tasks for parm.clock every 15 minutes
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=5min
+OnUnitActiveSec=15min
 Persistent=true
 
 [Install]
@@ -428,7 +428,7 @@ EOF
 
   systemctl --user daemon-reload
   systemctl --user enable --now parm.clock-sync.timer
-  ok "timer enabled and started (sync every 5 min)."
+  ok "timer enabled and started (sync every 15 min)."
 }
 
 # ----------------------------------------------------------------- main

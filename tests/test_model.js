@@ -411,6 +411,15 @@ function testEventIndexKeepsDifferentCalendarsWithSameId() {
   assert.strictEqual(Model.eventIndex(events)["2026-08-20"].length, 2);
 }
 
+function testSyncInterval() {
+  assert.strictEqual(Model.parseSyncInterval(30, 15), 30);
+  assert.strictEqual(Model.parseSyncInterval(31, 15), 15);
+  assert.strictEqual(Model.parseSyncInterval("60", 15), 60);
+  assert.strictEqual(Model.parseSyncInterval("bad", 30), 30);
+  assert.strictEqual(Model.syncIntervalLabel(60), "Every hour");
+  assert.deepStrictEqual(Model.SYNC_INTERVAL_OPTIONS, [5, 15, 30, 60, 120, 240]);
+}
+
 const tests = [
   testEventIndexSpansTimedMultiDay,
   testEventIndexSingleDayUnchanged,
@@ -420,6 +429,7 @@ const tests = [
   testEventEndTimeText,
   testNormalizedAllDayEditUsesInclusiveEnd,
   testEventIndexKeepsDifferentCalendarsWithSameId,
+  testSyncInterval,
   testEventIndex,
   testEventsForDateAllDayFirst,
   testTaskDueDate,
