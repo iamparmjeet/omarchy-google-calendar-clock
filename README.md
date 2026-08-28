@@ -206,7 +206,7 @@ but only the bounded display window is indexed.
 
 ## Security And Robustness
 
-Release `1.2.0` hardens the sync and installer boundaries and adds a selectable
+Release `1.3.0` hardens the sync and installer boundaries and adds a selectable
 sync interval. Remote event data
 cannot force unbounded calendar-day expansion, malformed API records are
 skipped instead of crashing the worker, and sync failure text is bounded before
