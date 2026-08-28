@@ -18,9 +18,19 @@ Row {
   property int timeWidth: Style.space(72)
 
   signal openRequested(var ev)
+  signal detailRequested(var ev)
 
   width: parent.width
   spacing: Style.space(8)
+
+  // Body clicks open the in-panel detail view. The trailing action button has
+  // its own higher-z handler and continues to open Google Calendar directly.
+  MouseArea {
+    z: -1
+    anchors.fill: parent
+    cursorShape: Qt.PointingHandCursor
+    onClicked: row.detailRequested(row.ev)
+  }
 
   Rectangle { width: Style.space(3); height: Style.space(14); radius: 1; anchors.verticalCenter: parent.verticalCenter; color: row.dotColor(row.ev) }
 
