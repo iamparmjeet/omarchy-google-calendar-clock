@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfoNotFoundError
@@ -133,6 +134,8 @@ def validate_config(cfg: dict) -> list[str]:
     gws = cfg.get("gwsPath")
     if not isinstance(gws, str) or not gws:
         errors.append("gwsPath must be a non-empty string")
+    elif not os.path.isabs(gws):
+        errors.append("gwsPath must be an absolute path")
 
     if not isinstance(cfg.get("tasklistIds"), list):
         errors.append("tasklistIds must be a list")
@@ -149,15 +152,15 @@ def save_config(cfg: dict, path: Optional[Path] = None) -> None:
     target = Path(path) if path else CONFIG_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(target.parent, 0o700)
-    tmp = target.with_suffix(".json.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    tmp = Path(tmp_name)
     try:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(json.dumps(cfg, indent=2, sort_keys=True) + "\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.replace(target)
+        os.replace(tmp, target)
     finally:
         if tmp.exists():
             tmp.unlink()

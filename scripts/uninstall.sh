@@ -80,9 +80,12 @@ ask() {
     if $DRY_RUN; then echo "   would ask: $prompt [Y/n] -> Y (dry-run)"; fi
     return 0
   fi
-  if [[ ! -t 0 ]]; then return 0; fi
+  if [[ ! -t 0 ]]; then
+    warn "Non-interactive uninstall requires --yes to approve: $prompt"
+    return 1
+  fi
   local ans
-  read -r -p "$prompt [Y/n] " ans </dev/tty || return 0
+  read -r -p "$prompt [Y/n] " ans </dev/tty || return 1
   ans="${ans:-Y}"
   [[ "$ans" =~ ^[Yy] ]] || [[ "$ans" == "" ]]
 }
@@ -157,7 +160,7 @@ main() {
     fi
     # gcloud credentials — optional, only if gcloud is present
     if [[ -d "$GCLOUD_DIR" ]]; then
-      if ask "Also revoke gcloud auth (gcloud auth revoke --all) and delete $GCLOUD_DIR?"; then
+      if ask "Revoke all gcloud accounts on this machine (gcloud auth revoke --all) and keep $GCLOUD_DIR?"; then
         if command -v gcloud >/dev/null 2>&1; then
           run gcloud auth revoke --all 2>/dev/null || true
         fi
@@ -177,9 +180,9 @@ main() {
     if pacman -Q google-cloud-cli 2>/dev/null >/dev/null; then
       if ask "Remove google-cloud-cli (~313 MiB, yay AUR) via pacman/yay (needs sudo)?"; then
         if command -v yay >/dev/null 2>&1; then
-          run yay -Rns --noconfirm google-cloud-cli 2>/dev/null || run sudo pacman -Rns --noconfirm google-cloud-cli || warn "remove failed"
+          run yay -Rns google-cloud-cli 2>/dev/null || run sudo pacman -Rns google-cloud-cli || warn "remove failed"
         else
-          run sudo pacman -Rns --noconfirm google-cloud-cli || warn "pacman remove failed (install yay then: yay -Rns google-cloud-cli)"
+          run sudo pacman -Rns google-cloud-cli || warn "pacman remove failed (install yay then: yay -Rns google-cloud-cli)"
         fi
         ok "removed google-cloud-cli"
       else
@@ -191,7 +194,7 @@ main() {
     # wrong gws (StreakyCobra) via pacman (-Qi: -Q has no description)
     if pacman -Qi gws 2>/dev/null | grep -q "Colorful KISS helper"; then
       if ask "Remove wrong pacman package 'gws' (StreakyCobra/git-workspace)?"; then
-        run sudo pacman -Rns --noconfirm gws || true
+        run sudo pacman -Rns gws || true
         ok "removed pacman gws"
       fi
     fi

@@ -115,6 +115,43 @@ class TestEventNormalization(unittest.TestCase):
         self.assertEqual(ev["dateKey"], "")
         self.assertEqual(schema.validate_event(ev), [])
 
+    def test_event_span_is_clipped(self):
+        raw = {
+            "id": "long", "summary": "Long",
+            "start": {"date": "2026-01-01"},
+            "end": {"date": "9999-12-31"},
+        }
+        ev = schema.normalize_event(raw, "primary", "UTC")
+        self.assertEqual(ev["dateKey"], "2026-01-01")
+        self.assertEqual(ev["end"], "2026-03-31")
+        self.assertEqual(ev["endDateKey"], "2026-03-31")
+
+    def test_event_span_clip_does_not_overflow_at_max_date(self):
+        raw = {
+            "id": "max", "summary": "Max",
+            "start": {"date": "9999-12-31"},
+            "end": {"date": "9999-12-31"},
+        }
+        ev = schema.normalize_event(raw, "primary", "UTC")
+        self.assertEqual(ev["dateKey"], "9999-12-31")
+        self.assertEqual(ev["endDateKey"], "9999-12-31")
+
+    def test_malformed_event_shapes_are_safe(self):
+        ev = schema.normalize_event({"id": "bad", "start": [], "end": None}, "primary", "UTC")
+        self.assertEqual(ev["dateKey"], "")
+        self.assertEqual(ev["endDateKey"], "")
+        self.assertEqual(schema.validate_event(ev), [])
+
+    def test_non_string_date_fields_are_safe(self):
+        ev = schema.normalize_event(
+            {"id": "bad", "start": {"dateTime": []}, "end": {"dateTime": {}}},
+            "primary",
+            "UTC",
+        )
+        self.assertEqual(ev["start"], "")
+        self.assertEqual(ev["end"], "")
+        self.assertEqual(schema.validate_event(ev), [])
+
 
 class TestTaskNormalization(unittest.TestCase):
     def test_task_due(self):
@@ -159,6 +196,11 @@ class TestValidation(unittest.TestCase):
         state["syncStatus"]["state"] = "bogus"
         self.assertTrue(any("state" in e for e in schema.validate_state(state)))
 
+    def test_sync_message_length_is_bounded(self):
+        state = load_fixture("state.golden.json")
+        state["syncStatus"]["message"] = "x" * (schema.MAX_SYNC_MESSAGE_CHARS + 1)
+        self.assertTrue(any("message" in e for e in schema.validate_state(state)))
+
     def test_bad_task_status(self):
         state = load_fixture("state.golden.json")
         state["tasks"][0]["status"] = "weird"
@@ -178,6 +220,12 @@ class TestConfig(unittest.TestCase):
         cfg = dict(config.DEFAULT_CONFIG)
         cfg["timezone"] = ""
         self.assertTrue(any("timezone" in e for e in config.validate_config(cfg)))
+
+    def test_relative_gws_path_rejected(self):
+        from sync import config
+        cfg = dict(config.DEFAULT_CONFIG)
+        cfg["gwsPath"] = "./gws"
+        self.assertTrue(any("gwsPath" in e for e in config.validate_config(cfg)))
 
 
 if __name__ == "__main__":

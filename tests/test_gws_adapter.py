@@ -149,6 +149,10 @@ class TestGwsAdapter(unittest.TestCase):
         finally:
             os.environ.pop("FAKE_GWS_ENDLESS", None)
 
+    def test_list_rejects_non_list_items(self):
+        with mock.patch.object(gws_adapter, "run", return_value={"items": {"id": "bad"}}):
+            self.assertEqual(gws_adapter._list_all("calendar", "events", "list", {}), [])
+
     def test_list_page_cap_truncates(self):
         # Endless pagination stops at MAX_LIST_PAGES even under a high item cap.
         os.environ["FAKE_GWS_ENDLESS"] = "1"
@@ -165,9 +169,8 @@ class TestGwsAdapter(unittest.TestCase):
         # buffered to completion.
         os.environ["FAKE_GWS_HUGE"] = "1"
         try:
-            with mock.patch.object(gws_adapter, "MAX_RESPONSE_BYTES", 4096):
-                with self.assertRaises(gws_adapter.GwsError) as ctx:
-                    gws_adapter.run("calendar", "events", "list", gws_path=self._gws())
+            with mock.patch.object(gws_adapter, "MAX_RESPONSE_BYTES", 4096), self.assertRaises(gws_adapter.GwsError) as ctx:
+                gws_adapter.run("calendar", "events", "list", gws_path=self._gws())
             self.assertEqual(ctx.exception.kind, "limit")
         finally:
             os.environ.pop("FAKE_GWS_HUGE", None)

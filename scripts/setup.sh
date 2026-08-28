@@ -35,7 +35,13 @@ else
   # `gcloud services enable` with a misleading IAM error. Generate a unique
   # default that still hints at the owner (6-30 chars, lowercase, hyphens).
   _suffix="$(head -c4 /dev/urandom 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n' | head -c8)"
-  if [[ -z "$_suffix" ]]; then _suffix="$(date +%s | tail -c5)"; fi
+  if [[ -z "$_suffix" && -r /proc/sys/kernel/random/uuid ]]; then
+    _suffix="$(tr -d '-' < /proc/sys/kernel/random/uuid | head -c8)"
+  fi
+  if [[ -z "$_suffix" ]]; then
+    printf 'could not generate a unique project suffix\n' >&2
+    exit 1
+  fi
   PROJECT="omarchy-clock-${_suffix,,}"
   unset _suffix
 fi
@@ -106,10 +112,13 @@ ask() {
     if $DRY_RUN; then echo "   would ask: $prompt [Y/n] -> Y (dry-run)"; fi
     return 0
   fi
-  # Only prompt if stdin is a tty; otherwise auto-yes
-  if [[ ! -t 0 ]]; then return 0; fi
+  # Never approve package or privileged actions implicitly in a pipeline.
+  if [[ ! -t 0 ]]; then
+    warn "Non-interactive setup requires --yes to approve: $prompt"
+    return 1
+  fi
   local ans
-  read -r -p "$prompt [Y/n] " ans </dev/tty || return 0
+  read -r -p "$prompt [Y/n] " ans </dev/tty || return 1
   ans="${ans:-Y}"
   [[ "$ans" =~ ^[Yy] ]] || [[ "$ans" == "" ]]
 }
@@ -126,7 +135,11 @@ install_correct_gws() {
   # never the description the grep looks for)
   if pacman -Qi gws 2>/dev/null | grep -q "Colorful KISS helper"; then
     warn "Removing wrong pacman package 'gws' (StreakingCobra/git-workspace)…"
-    sudo pacman -Rns --noconfirm gws 2>/dev/null || true
+    if ask "Remove wrong pacman package 'gws' (StreakingCobra/git-workspace) with sudo?"; then
+      sudo pacman -Rns gws 2>/dev/null || true
+    else
+      warn "Keeping wrong pacman package 'gws'; it may shadow the Google Workspace CLI."
+    fi
     hash -r 2>/dev/null || true
   fi
   # Try npm first (preferred, prebuilt Rust binaries). Pinned to v0.22.5 so the
@@ -173,19 +186,19 @@ ensure_deps() {
         info "Would install google-cloud-cli (yay -S or pacman -S)"
       elif command_exists yay; then
         info "Installing google-cloud-cli via yay…"
-        yay -S --needed --noconfirm google-cloud-cli || \
+        yay -S --needed google-cloud-cli || \
           die "gcloud install via yay failed; try: yay -S google-cloud-cli  or  https://cloud.google.com/sdk/docs/install"
         ok "gcloud installed via yay."
       elif command_exists pacman && pacman -Si google-cloud-cli >/dev/null 2>&1; then
         info "Installing google-cloud-cli via pacman…"
-        sudo pacman -S --needed --noconfirm google-cloud-cli || \
+        sudo pacman -S --needed google-cloud-cli || \
           die "gcloud install failed; install it manually (https://cloud.google.com/sdk/docs/install) and re-run."
         ok "gcloud installed via pacman."
       elif command_exists pacman; then
         # AUR but yay not installed — try pacman anyway, else instruct yay
         warn "google-cloud-cli is AUR — yay is recommended (pacman alone won't find it)."
         info "Trying pacman (will fail if not in extra, then try manual)…"
-        if sudo pacman -S --needed --noconfirm google-cloud-cli 2>/dev/null; then
+        if sudo pacman -S --needed google-cloud-cli 2>/dev/null; then
           ok "gcloud installed via pacman."
         else
           die "gcloud not in pacman repos. Install yay (https://github.com/Jguer/yay) then: yay -S google-cloud-cli  — or use https://cloud.google.com/sdk/docs/install"
@@ -245,6 +258,7 @@ ensure_auth() {
   else
     # Don't die on setup failure — it may require manual console steps but auth may already be ok.
     _setup_out="$(mktemp)"
+    trap 'rm -f -- "${_setup_out:-}"' EXIT
     if ! gws auth setup --project "$PROJECT" 2>&1 | tee "$_setup_out"; then
       # GCP project ids are globally unique. gcloud reports a missing project and
       # an inaccessible (already-taken) project with the same PERMISSION_DENIED,
@@ -319,18 +333,16 @@ write_config() {
   chmod 700 "$CONFIG_DIR"
   # umask 077 in the subshell -> config.json is created 0600 (it names the
   # user's calendars/tasklists); the chmod also tightens any older 0644 file.
-  ( umask 077
-    cat > "$CONFIG_FILE" <<EOF
-{
-  "timezone": "$TIMEZONE",
-  "pastDays": 7,
-  "futureDays": 60,
-  "gwsPath": "$gws_path",
-  "syncIntervalMin": 5,
-  "tasklistIds": []
-}
-EOF
-  )
+  local tmp_config
+  tmp_config="$(mktemp "$CONFIG_DIR/.config.json.XXXXXX")"
+  if ! ( umask 077
+    python3 -c 'import json, sys; json.dump({"timezone": sys.argv[1], "pastDays": 7, "futureDays": 60, "gwsPath": sys.argv[2], "syncIntervalMin": 5, "tasklistIds": []}, sys.stdout, indent=2); sys.stdout.write("\\n")' "$TIMEZONE" "$gws_path" > "$tmp_config"
+  ); then
+    rm -f -- "$tmp_config"
+    die "could not write $CONFIG_FILE"
+  fi
+  chmod 600 "$tmp_config"
+  mv -f -- "$tmp_config" "$CONFIG_FILE"
   chmod 600 "$CONFIG_FILE"
   ok "config written (timezone=$TIMEZONE, gws=$gws_path)"
 }
@@ -354,6 +366,18 @@ install_systemd() {
 
   local python_bin
   python_bin="$(command -v python3)"
+  local sync_path="$SYNC_DIR/sync.py"
+
+  if [[ "$python_bin$sync_path" == *$'\n'* || "$python_bin$sync_path" == *%* ]]; then
+    die "python or plugin path contains a newline or '%'; choose a simpler install path"
+  fi
+
+  systemd_quote() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '"%s"' "$value"
+  }
 
   # Render the units with this machine's absolute paths. The committed templates
   # carry placeholder-free text but hardcode the dev machine; we rewrite them so
@@ -381,7 +405,7 @@ Type=oneshot
 # A single gws call may take up to its 120s adapter timeout; a slow network can
 # stack several, so the whole sync gets 10 minutes before systemd reaps it.
 # (The state file stays last-good either way — writes are atomic.)
-ExecStart=$python_bin $SYNC_DIR/sync.py
+ExecStart=$(systemd_quote "$python_bin") $(systemd_quote "$sync_path")
 TimeoutStartSec=600
 Nice=10
 

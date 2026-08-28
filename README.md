@@ -190,6 +190,10 @@ Sync-only keys (written by `setup.sh` to `~/.config/parm.clock/config.json`):
 - `syncIntervalMin` — informational; the timer interval is fixed at 5 min in the unit
 - `tasklistIds` — optional task-list filter (empty = all)
 
+The sync engine bounds event expansion to 90 calendar days and caps total
+expanded index entries in the QML model. Longer events remain in the cache,
+but only the bounded display window is indexed.
+
 > Calendar visibility is owned solely by the shell.json `hiddenCalendars` setting above — the sync fetches every calendar Google shows, so a hidden calendar can always be re-toggled from the panel's `⚙` settings.
 
 ---

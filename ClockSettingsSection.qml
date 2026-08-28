@@ -23,6 +23,10 @@ Column {
 
   function isHidden(calId) { return hiddenCalendars.indexOf(calId) !== -1 }
 
+  function safeCalendarLabel(calendar) {
+    return String(calendar.name || calendar.id || "").replace(/[<>]/g, "")
+  }
+
   function toggleCalendar(calId) {
     var arr = hiddenCalendars.slice()
     var i = arr.indexOf(calId)
@@ -62,7 +66,7 @@ Column {
     Toggle {
       required property var modelData
       width: parent.width
-      label: modelData.name || modelData.id
+      label: section.safeCalendarLabel(modelData)
       checked: !section.isHidden(modelData.id)
       foreground: section.foreground
       fontFamily: section.fontFamily

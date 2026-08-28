@@ -32,6 +32,8 @@ TASK_STATUSES = ("needsAction", "completed")
 MAX_TITLE_CHARS = 512
 MAX_NOTES_CHARS = 4096
 MAX_URL_CHARS = 2048
+MAX_SYNC_MESSAGE_CHARS = 2048
+MAX_EVENT_SPAN_DAYS = 90
 
 
 def clip(value: Any, limit: int) -> str:
@@ -49,6 +51,12 @@ TASK_REQUIRED = {"id", "listId", "title", "status"}
 def local_date_key(d: date) -> str:
     """Return the local ``YYYY-MM-DD`` identity for a ``datetime.date``."""
     return d.strftime("%Y-%m-%d")
+
+
+def _clamped_end_date(start: date, end: date) -> date:
+    """Keep an event end within the display expansion window without overflow."""
+    limit = start.toordinal() + MAX_EVENT_SPAN_DAYS - 1
+    return date.fromordinal(min(end.toordinal(), limit, date.max.toordinal()))
 
 
 def parse_datetime(value: Any) -> Optional[datetime]:
@@ -231,8 +239,11 @@ def validate_sync_status(ss: Any) -> list[str]:
     if ss.get("state") not in SYNC_STATES:
         errors.append(f"state must be one of {SYNC_STATES}")
 
-    if "message" in ss and not isinstance(ss.get("message"), str):
-        errors.append("message must be a string")
+    if "message" in ss:
+        if not isinstance(ss.get("message"), str):
+            errors.append("message must be a string")
+        elif len(ss["message"]) > MAX_SYNC_MESSAGE_CHARS:
+            errors.append(f"message must be at most {MAX_SYNC_MESSAGE_CHARS} characters")
 
     if "lastOk" in ss and ss.get("lastOk") is not None:
         if not isinstance(ss.get("lastOk"), str) or not RFC3339_RE.match(ss.get("lastOk")):
@@ -252,23 +263,32 @@ def normalize_event(raw: dict, calendar_id: str, timezone: str) -> dict:
     and ``end`` are objects with either ``dateTime`` (RFC3339) or ``date``
     (``YYYY-MM-DD`` for all-day). Recurring instances carry ``recurringEventId``.
     """
-    start = raw.get("start") or {}
-    end = raw.get("end") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    start = raw.get("start") if isinstance(raw.get("start"), dict) else {}
+    end = raw.get("end") if isinstance(raw.get("end"), dict) else {}
 
     all_day = "date" in start and "dateTime" not in start
     start_raw = start.get("dateTime") if not all_day else start.get("date")
     end_raw = end.get("dateTime") if not all_day else end.get("date")
+    if not isinstance(start_raw, str):
+        start_raw = ""
+    if not isinstance(end_raw, str):
+        end_raw = ""
 
     if all_day:
-        dk = start_raw or ""
+        start_date = parse_date(start_raw)
+        dk = local_date_key(start_date) if start_date is not None else ""
         # Google all-day end is exclusive; collapse it to the inclusive end
         # date so the UI model can span multi-day events without off-by-one.
-        start_date = parse_date(start_raw)
         end_date = parse_date(end_raw)
-        if end_date is not None and start_date is not None and end_date > start_date:
-            end_raw = local_date_key(end_date - _timedelta_days(1))
+        if start_date is None:
+            end_raw = ""
+        elif end_date is not None and end_date > start_date:
+            inclusive_end = end_date - _timedelta_days(1)
+            end_raw = local_date_key(_clamped_end_date(start_date, inclusive_end))
         else:
-            end_raw = start_raw or end_raw or ""
+            end_raw = dk
     else:
         dt = parse_datetime(start_raw)
         dk = ""
@@ -304,6 +324,14 @@ def normalize_event(raw: dict, calendar_id: str, timezone: str) -> dict:
         if edk < dk:
             edk = dk
 
+    if dk and edk:
+        start_date = parse_date(dk)
+        end_date = parse_date(edk)
+        if start_date is not None and end_date is not None:
+            edk = local_date_key(_clamped_end_date(start_date, end_date))
+    elif not dk:
+        edk = ""
+
     return {
         "id": raw.get("id", ""),
         "calendarId": calendar_id,
@@ -327,12 +355,15 @@ def _timedelta_days(n: int):
 
 
 def _meet_url(raw: dict) -> str:
-    conference = raw.get("conferenceData") or {}
+    conference = raw.get("conferenceData") if isinstance(raw, dict) else {}
+    conference = conference if isinstance(conference, dict) else {}
     points = conference.get("entryPoints") or []
+    if not isinstance(points, list):
+        points = []
     for p in points:
-        if p.get("entryPointType") == "video" and p.get("uri"):
+        if isinstance(p, dict) and p.get("entryPointType") == "video" and p.get("uri"):
             return p["uri"]
-    return raw.get("hangoutLink") or ""
+    return (raw.get("hangoutLink") or "") if isinstance(raw, dict) else ""
 
 
 def normalize_task(raw: dict, list_id: str) -> dict:
@@ -341,7 +372,11 @@ def normalize_task(raw: dict, list_id: str) -> dict:
     ``due`` is normalized to a local ``YYYY-MM-DD`` date (Google stores it as an
     RFC3339 timestamp whose time-of-day is meaningless).
     """
+    if not isinstance(raw, dict):
+        raw = {}
     due = raw.get("due") or ""
+    if not isinstance(due, str):
+        due = ""
     parsed = parse_datetime(due)
     if parsed is not None:
         due = parsed.date().isoformat()
@@ -351,8 +386,8 @@ def normalize_task(raw: dict, list_id: str) -> dict:
         "title": clip(raw.get("title") or "", MAX_TITLE_CHARS),
         "notes": clip(raw.get("notes") or "", MAX_NOTES_CHARS),
         "due": due,
-        "status": raw.get("status") or "needsAction",
-        "completed": raw.get("completed") or "",
+        "status": raw.get("status") if isinstance(raw.get("status"), str) and raw.get("status") in TASK_STATUSES else "needsAction",
+        "completed": raw.get("completed") if isinstance(raw.get("completed"), str) else "",
     }
 
 

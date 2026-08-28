@@ -38,6 +38,8 @@ _TMP_COUNTER = count()
 # document stays bounded; overflow keeps the earliest window-ordered entries.
 MAX_STATE_EVENTS = 10000
 MAX_STATE_TASKS = 10000
+MAX_CALENDARS = 100
+MAX_TASKLISTS = 100
 
 # Hard ceiling on the serialized state.json. Field caps bound each record and
 # the item caps bound record counts, but together they still only bound the
@@ -54,11 +56,11 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(_ROOT))
     from sync import gws_adapter
     from sync.config import DEFAULT_CONFIG, load_config, validate_config
-    from sync.schema import empty_state, normalize_event, normalize_task, utc_now, validate_state
+    from sync.schema import clip, empty_state, normalize_event, normalize_task, utc_now, validate_state
 else:
     from . import gws_adapter
     from .config import DEFAULT_CONFIG, load_config, validate_config
-    from .schema import empty_state, normalize_event, normalize_task, utc_now, validate_state
+    from .schema import clip, empty_state, normalize_event, normalize_task, utc_now, validate_state
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", "~/.local/state")).expanduser() / "parm.clock"
 STATE_PATH = STATE_DIR / "state.json"
 
@@ -88,23 +90,27 @@ def filter_calendars(calendars: list[dict], cfg: dict) -> list[dict]:
     display time by the panel; it must NOT be applied here, or a hidden
     calendar vanishes from state.json and can never be re-toggled in settings.
     """
-    return [cal for cal in calendars if not cal.get("hidden")]
+    return [cal for cal in calendars if isinstance(cal, dict) and not cal.get("hidden")]
 
 
 def filter_tasklists(tasklists: list[dict], cfg: dict) -> list[dict]:
-    allow = set(cfg.get("tasklistIds", []))
+    allow = {item for item in cfg.get("tasklistIds", []) if isinstance(item, str)}
     if not allow:
         return tasklists
-    return [tl for tl in tasklists if tl.get("id") in allow]
+    return [tl for tl in tasklists if isinstance(tl, dict) and tl.get("id") in allow]
 
 
 def dedupe(events: list[dict]) -> list[dict]:
-    """Remove duplicate events (same id in multiple calendars), keep first."""
-    seen: set[str] = set()
+    """Remove duplicate events within a calendar, keeping the first record."""
+    seen: set[tuple[str, str]] = set()
     out: list[dict] = []
     for ev in events:
-        key = ev.get("id")
-        if not key or key in seen:
+        event_id = ev.get("id")
+        calendar_id = ev.get("calendarId")
+        if not isinstance(event_id, str) or not event_id or not isinstance(calendar_id, str):
+            continue
+        key = (calendar_id, event_id)
+        if key in seen:
             continue
         seen.add(key)
         out.append(ev)
@@ -314,6 +320,14 @@ def run_sync(
             raw_tasklists = gws_adapter.list_tasklists(exe)
             tasklists = filter_tasklists(raw_tasklists, cfg)
 
+        calendars = [c for c in calendars if isinstance(c, dict) and isinstance(c.get("id"), str) and c["id"]]
+        tasklists = [t for t in tasklists if isinstance(t, dict) and isinstance(t.get("id"), str) and t["id"]]
+        if len(calendars) > MAX_CALENDARS:
+            print(f"warning: limiting calendars to {MAX_CALENDARS}", file=sys.stderr)
+            calendars = calendars[:MAX_CALENDARS]
+        if len(tasklists) > MAX_TASKLISTS:
+            print(f"warning: limiting tasklists to {MAX_TASKLISTS}", file=sys.stderr)
+            tasklists = tasklists[:MAX_TASKLISTS]
         calendar_ids = [c["id"] for c in calendars]
 
         time_min, time_max = compute_window(cfg, timezone)
@@ -324,9 +338,16 @@ def run_sync(
             out: list[dict] = []
             try:
                 for raw in gws_adapter.list_events(cal_id, time_min, time_max, gws_path=exe):
+                    if not isinstance(raw, dict):
+                        print(f"warning: calendar {cal_id} returned a non-object event; skipped", file=sys.stderr)
+                        continue
                     if raw.get("status") == "cancelled":
                         continue
-                    out.append(normalize_event(raw, cal_id, timezone))
+                    normalized = normalize_event(raw, cal_id, timezone)
+                    if isinstance(normalized.get("id"), str) and normalized["id"]:
+                        out.append(normalized)
+                    else:
+                        print(f"warning: calendar {cal_id} returned an event without a string id; skipped", file=sys.stderr)
             except (gws_adapter.AuthError, gws_adapter.ApiError):
                 # Auth/API failures must NOT be swallowed: swallowing them here
                 # would let an expired token (check_auth=False refresh) write an
@@ -345,7 +366,13 @@ def run_sync(
             out: list[dict] = []
             try:
                 for raw in gws_adapter.list_tasks(tl_id, due_max=time_max, show_completed=True, gws_path=exe):
+                    if not isinstance(raw, dict):
+                        print(f"warning: tasklist {tl_id} returned a non-object task; skipped", file=sys.stderr)
+                        continue
                     normalized = normalize_task(raw, tl_id)
+                    if not isinstance(normalized.get("id"), str) or not normalized["id"]:
+                        print(f"warning: tasklist {tl_id} returned a task without a string id; skipped", file=sys.stderr)
+                        continue
                     # Recent-only filter for completed tasks: keep completed only if
                     # completed within last 30 days, to avoid syncing hundreds of
                     # historical tasks while still showing recent completions mixed
@@ -451,7 +478,11 @@ def _preserve_or_emit_failure(target: Path, cfg: dict, sync_state: str, message:
         return
     # No good state yet — emit a valid empty document marked with the failure,
     # so the UI still has something schema-valid to render.
-    state = empty_state(cfg.get("timezone") or DEFAULT_CONFIG["timezone"], sync_state, message)
+    state = empty_state(
+        cfg.get("timezone") or DEFAULT_CONFIG["timezone"],
+        sync_state,
+        clip(message, 512),
+    )
     try:
         atomic_write(target, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
     except OSError:
