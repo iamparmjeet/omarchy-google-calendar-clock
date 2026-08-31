@@ -24,13 +24,20 @@ Row {
   spacing: Style.space(8)
 
   // Body clicks open the in-panel detail view. The trailing action button has
-  // its own higher-z handler and continues to open Google Calendar directly.
-  MouseArea {
-    z: -1
-    anchors.fill: parent
-    cursorShape: Qt.PointingHandCursor
-    onClicked: row.detailRequested(row.ev)
-  }
+  // its own handler and continues to open Google Calendar directly.
+  //
+  // A TapHandler rather than a MouseArea, because this component's root is a
+  // Row. A MouseArea is an Item, so anchors.fill on it is one of the anchors a
+  // Row forbids -- and Qt does not merely ignore it, it declines to lay the Row
+  // out at all:
+  //
+  //   Cannot specify left, right, horizontalCenter, fill or centerIn anchors
+  //   for items inside Row. Row will not function.
+  //
+  // Every event row then sizes to zero, so the selected-day list and the
+  // upcoming list render empty while the data behind them is intact. An input
+  // handler is not an Item and never joins the layout.
+  TapHandler { onTapped: row.detailRequested(row.ev) }
 
   Rectangle { width: Style.space(3); height: Style.space(14); radius: 1; anchors.verticalCenter: parent.verticalCenter; color: row.dotColor(row.ev) }
 
