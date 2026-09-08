@@ -206,7 +206,10 @@ but only the bounded display window is indexed.
 
 ## Security And Robustness
 
-Release `1.3.0` hardens the sync and installer boundaries and adds a selectable
+Release `1.3.1` surfaces sync failures in the panel: a failed run keeps the
+cached events usable but stamps its status into the cache, so the footer
+warns (e.g. `Auth expired — run: gws auth login --services calendar,tasks`)
+instead of showing a stale `Synced … ago`. Release `1.3.0` hardens the sync and installer boundaries and adds a selectable
 sync interval. Remote event data
 cannot force unbounded calendar-day expansion, malformed API records are
 skipped instead of crashing the worker, and sync failure text is bounded before
@@ -316,6 +319,20 @@ python3 ~/.config/omarchy/plugins/parm.clock/sync/sync.py
 - `gws not installed` → install gws and re-run `scripts/setup.sh`.
 - `not authenticated` → `gws auth login --services calendar,tasks`.
 - `sync failed (error): …` → check `gws auth status` and network.
+
+**Footer warns "Auth expired" but old events still show.** That is by design:
+a failed run keeps the last-good cache usable and stamps the failure into its
+status, so the footer tells you what broke instead of silently going stale.
+Re-authenticate, then force a sync — the warning clears on the next success:
+
+```bash
+gws auth login --services calendar,tasks
+systemctl --user start parm.clock-sync.service
+```
+
+`invalid_grant: Token has been expired or revoked` means the grant is gone
+(revoked at `myaccount.google.com/permissions`, or the GCP OAuth client is in
+Testing mode where grants expire) — re-login is the fix, nothing is deleted.
 
 **New events go to the wrong calendar.** The panel writes to the calendar Google marks `primary` (never a read-only holiday calendar). Verify with `gws calendar calendarList list --params '{}'`.
 
