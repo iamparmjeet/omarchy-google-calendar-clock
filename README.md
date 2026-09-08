@@ -104,6 +104,16 @@ What `setup.sh` does, in order:
 7. Installs and enables the systemd user timer (`parm.clock-sync.timer` — every 15 min by default).
 
 > **Testing-mode OAuth note:** if your GCP OAuth client is in *Testing* mode, add your account as a test user (GCP → APIs & Services → OAuth consent screen → Test users), otherwise consent will be rejected.
+>
+> **First-login consent note:** `setup.sh` creates a GCP project and OAuth client
+> in *your own* Google Cloud account, so Google shows an "unverified app"
+> screen naming you as the developer. This is expected for a self-hosted
+> integration: click **Advanced → Go to omarchy-clock (unsafe) → Continue**.
+> The app requests only the Calendar and Tasks scopes, tokens stay in your
+> local keyring, and the full data story is at
+> [parmjeetmishra.com/omarchy/parm.clock/privacy](https://parmjeetmishra.com/omarchy/parm.clock/privacy).
+> (Upstream verification of the author's reference client is pending with
+> Google; per-user clients always consent against their own project.)
 
 For unattended or piped setup, pass `--yes` explicitly. Without it, package and
 privileged actions are refused when standard input is not a terminal. The npm
