@@ -200,6 +200,15 @@ Panel {
 
   readonly property string syncLabel: Model.syncStatusLabel(root.state.syncStatus, new Date())
   readonly property bool syncStale: Model.isStale(root.state.syncStatus, new Date(), 30)
+  // A stamped auth/error status turns the ↻ button red with the fix in its
+  // tooltip, so a dead token is visible without reading the footer.
+  readonly property bool syncFailed: {
+    var st = root.state.syncStatus && root.state.syncStatus.state
+    return st === "auth" || st === "error"
+  }
+  readonly property string syncButtonTip: root.syncFailed
+    ? "Last sync failed — re-auth: gws auth login --services calendar,tasks"
+    : "Sync now"
   function runSync() {
     if (root.bar) root.bar.run("python3 " + shellQuote(syncPath) + " && omarchy-shell -q parm.clock refresh")
   }
@@ -623,7 +632,7 @@ Panel {
           Row {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Style.space(6)
-            Button { iconText: "󰓦"; tooltipText: "Sync now"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.runSync() }
+            Button { iconText: "󰓦"; tooltipText: root.syncButtonTip; foreground: root.syncFailed ? Color.urgent : root.contentForeground; fontFamily: root.contentFontFamily; onClicked: root.runSync() }
             Button { iconText: "󰐕"; tooltipText: "New event"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; selected: root.editingNewEvent; onClicked: root.toggleNewEvent() }
             Button { iconText: "󰄳"; tooltipText: "New task [ ]"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; selected: root.editingNewTask; onClicked: root.toggleNewTask() }
             Button { iconText: "󰒓"; tooltipText: "Settings"; foreground: root.contentForeground; fontFamily: root.contentFontFamily; selected: root.settingsVisible; onClicked: root.toggleSettings() }
