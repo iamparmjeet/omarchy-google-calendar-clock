@@ -320,6 +320,10 @@ Panel {
     Qt.openUrlExternally(url)
   }
   function openEventLink(ev) { if (ev) root.openUrlSafely(ev.htmlLink || ev.meetUrl || "") }
+  // First-party constant for the README sync section — never built from
+  // calendar/task data, so it bypasses the organizer-data URL allowlist
+  // (openUrlSafely) by design rather than by exception.
+  function openRepoSyncHelp() { Qt.openUrlExternally("https://github.com/iamparmjeet/omarchy-google-calendar-clock#troubleshooting") }
   function openLocationInMaps(location) {
     var q = String(location || "").trim()
     if (q === "") return
@@ -685,8 +689,11 @@ Panel {
             onChanged: root.persistSettings(values)
           }
 
-          // ---- Sync status footer (message can carry gws/Google error text)
+          // ---- Sync status footer (message can carry gws/Google error text).
+          //      While a sync failure is stamped, the footer links to the
+          //      README sync section for the full re-login walkthrough.
           Text {
+            id: syncFooter
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
@@ -695,6 +702,15 @@ Panel {
             color: root.syncStale ? Color.urgent : Qt.darker(root.contentForeground, 1.8)
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.caption
+            font.underline: root.syncFailed
+          }
+          MouseArea {
+            anchors.fill: syncFooter
+            enabled: root.syncFailed
+            hoverEnabled: enabled
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.openRepoSyncHelp()
+            PanelToolTip { visible: parent.containsMouse; text: "Open sync help"; fontFamily: root.contentFontFamily }
           }
         }
       }
