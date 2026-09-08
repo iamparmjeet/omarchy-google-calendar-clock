@@ -691,26 +691,32 @@ Panel {
 
           // ---- Sync status footer (message can carry gws/Google error text).
           //      While a sync failure is stamped, the footer links to the
-          //      README sync section for the full re-login walkthrough.
-          Text {
-            id: syncFooter
+          //      README sync section for the full re-login walkthrough. The
+          //      Text + MouseArea sit in a plain Item: anchors are forbidden
+          //      as direct children of the Column (it would refuse layout).
+          Item {
             width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            text: root.syncStale ? "⚠ " + root.syncLabel : "✓ " + root.syncLabel
-            textFormat: Text.PlainText
-            color: root.syncStale ? Color.urgent : Qt.darker(root.contentForeground, 1.8)
-            font.family: root.contentFontFamily
-            font.pixelSize: Style.font.caption
-            font.underline: root.syncFailed
-          }
-          MouseArea {
-            anchors.fill: syncFooter
-            enabled: root.syncFailed
-            hoverEnabled: enabled
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.openRepoSyncHelp()
-            PanelToolTip { visible: parent.containsMouse; text: "Open sync help"; fontFamily: root.contentFontFamily }
+            height: syncFooter.implicitHeight
+            Text {
+              id: syncFooter
+              anchors.fill: parent
+              horizontalAlignment: Text.AlignHCenter
+              wrapMode: Text.Wrap
+              text: root.syncStale ? "⚠ " + root.syncLabel : "✓ " + root.syncLabel
+              textFormat: Text.PlainText
+              color: root.syncStale ? Color.urgent : Qt.darker(root.contentForeground, 1.8)
+              font.family: root.contentFontFamily
+              font.pixelSize: Style.font.caption
+              font.underline: root.syncFailed
+            }
+            MouseArea {
+              anchors.fill: parent
+              enabled: root.syncFailed
+              hoverEnabled: enabled
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.openRepoSyncHelp()
+              PanelToolTip { visible: parent.containsMouse; text: "Open sync help"; fontFamily: root.contentFontFamily }
+            }
           }
         }
       }
