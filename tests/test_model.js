@@ -112,8 +112,11 @@ function testIsStale() {
   assert.strictEqual(Model.isStale({ state: "ok", lastOk: "2026-08-20T17:54:00Z" }, now, 10), true);
   // never -> stale.
   assert.strictEqual(Model.isStale({ state: "never", lastOk: null }, now, 10), true);
-  // auth state with no lastOk -> stale.
+  // auth/error state -> stale even with a recent lastOk (a stamped failure
+  // must always warn, never show a checkmark).
   assert.strictEqual(Model.isStale({ state: "auth", lastOk: null }, now, 10), true);
+  assert.strictEqual(Model.isStale({ state: "auth", lastOk: "2026-08-20T18:00:00Z" }, now, 10), true);
+  assert.strictEqual(Model.isStale({ state: "error", lastOk: "2026-08-20T18:00:00Z" }, now, 10), true);
 }
 
 // ---- parseState / calendarColor / syncStatusLabel -------------------------
@@ -158,7 +161,7 @@ function testSyncStatusLabel() {
   const now = "2026-08-20T18:05:00Z";
   assert.strictEqual(Model.syncStatusLabel({ state: "ok", lastOk: "2026-08-20T18:00:00Z" }, now), "Synced 5m ago");
   assert.strictEqual(Model.syncStatusLabel({ state: "never", lastOk: null }, now), "Never synced");
-  assert.strictEqual(Model.syncStatusLabel({ state: "auth", lastOk: null }, now), "Auth needed — run setup");
+  assert.strictEqual(Model.syncStatusLabel({ state: "auth", lastOk: null }, now), "Auth expired — run: gws auth login --services calendar,tasks");
 }
 
 // ---- parseDateKey / dayDistance / relativeDayLabel / overdue helpers ------

@@ -519,10 +519,40 @@ def run_sync(
 
 
 def _preserve_or_emit_failure(target: Path, cfg: dict, sync_state: str, message: str) -> None:
-    """Preserve last-good state; if none exists, write a valid error state."""
-    if load_last_good(target) is not None:
-        # A valid prior state exists; leave it untouched (syncStatus stays as
-        # it was last time). We surface the failure via stderr only.
+    """Keep last-good events usable but stamp the failure into its syncStatus.
+
+    The cached events/calendars/tasks stay intact (the panel keeps working
+    offline and is never stuck), while syncStatus tells the truth about the
+    latest attempt — so the panel footer warns (e.g. auth expired, with the
+    re-login command) instead of showing a stale "Synced … ago" with no hint
+    of what broke. With no prior good state, emit a valid empty document
+    marked with the failure, so the UI still has something to render.
+    """
+    prior = load_last_good(target)
+    if prior is not None:
+        prior["syncStatus"] = {
+            "state": sync_state,
+            "message": clip(message, 512),
+            # Untouched: still the last SUCCESSFUL sync, which is what the
+            # panel's staleness math is relative to.
+            "lastOk": (prior.get("syncStatus") or {}).get("lastOk"),
+        }
+        serialized = _serialize_state(prior)
+        # The message swap can add at most ~512 bytes; shrink it rather than
+        # ever emitting a document past the ceiling the QML reader enforces
+        # (an over-ceiling file would blank the panel entirely).
+        while len(serialized.encode("utf-8")) > MAX_STATE_BYTES and prior["syncStatus"]["message"]:
+            prior["syncStatus"]["message"] = prior["syncStatus"]["message"][: len(prior["syncStatus"]["message"]) // 2]
+            serialized = _serialize_state(prior)
+        if validate_state(prior) or len(serialized.encode("utf-8")) > MAX_STATE_BYTES:
+            # Should not happen (only syncStatus changed, within schema), but
+            # never replace good data with an invalid document.
+            print(f"sync failed ({sync_state}): {clip(message, 512)}", file=sys.stderr)
+            return
+        try:
+            atomic_write(target, serialized)
+        except OSError:
+            pass
         print(f"sync failed ({sync_state}): {clip(message, 512)}", file=sys.stderr)
         return
     # No good state yet — emit a valid empty document marked with the failure,

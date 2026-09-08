@@ -442,9 +442,12 @@ function countdown(event, now) {
   return "in " + days + "d"
 }
 
-// Stale if the last successful sync is older than `thresholdMin` minutes.
+// Stale if the last successful sync is older than `thresholdMin` minutes —
+// or if the latest attempt failed at all, so a stamped auth/error status
+// always warns even when the last success was recent.
 function isStale(syncStatus, now, thresholdMin) {
   if (!syncStatus || syncStatus.state === "never") return true
+  if (syncStatus.state === "auth" || syncStatus.state === "error") return true
   var last = syncStatus.lastOk
   if (!last) return syncStatus.state !== "ok"
   var ref = typeof now === "string" ? Date.parse(now) : now.getTime()
@@ -494,7 +497,7 @@ function calendarColor(calendars, calendarId) {
 // A short, human "synced Nm ago" / "auth needed" / "never synced" label.
 function syncStatusLabel(syncStatus, now) {
   if (!syncStatus || syncStatus.state === "never") return "Never synced"
-  if (syncStatus.state === "auth") return "Auth needed — run setup"
+  if (syncStatus.state === "auth") return "Auth expired — run: gws auth login --services calendar,tasks"
   if (syncStatus.state === "error") return syncStatus.message || "Sync error"
   var last = syncStatus.lastOk
   if (!last) return "Synced"

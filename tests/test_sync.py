@@ -189,8 +189,15 @@ class TestSyncPipeline(unittest.TestCase):
         cfg = self._cfg()
         code = sync.run_sync(cfg, gws_path=str(self.fake), state_path=self.state_path)
         self.assertEqual(code, 2)
-        # Last-good state preserved untouched.
-        self.assertEqual(self.state_path.read_text(), good)
+        # Events survive, but the failure is stamped into syncStatus so the
+        # panel warns instead of showing a stale "Synced … ago".
+        state = json.loads(self.state_path.read_text())
+        good_state = json.loads(good)
+        self.assertEqual(state["events"], good_state["events"])
+        self.assertEqual(state["syncStatus"]["state"], "auth")
+        self.assertTrue(state["syncStatus"]["message"])
+        self.assertEqual(state["syncStatus"]["lastOk"], good_state["syncStatus"]["lastOk"])
+        self.assertEqual(validate_state(state), [])
 
     def test_no_state_emits_error_state(self):
         # A sync with a missing gws and no prior state writes a valid error doc.
@@ -320,7 +327,11 @@ class TestSyncPipeline(unittest.TestCase):
             # overall sync can still succeed with whatever it fetched — but if
             # the calendar list itself fails, it must preserve last-good.
             if code != 0:
-                self.assertEqual(self.state_path.read_text(), good)
+                state = json.loads(self.state_path.read_text())
+                good_state = json.loads(good)
+                self.assertEqual(state["events"], good_state["events"])
+                self.assertEqual(state["syncStatus"]["state"], "error")
+                self.assertEqual(validate_state(state), [])
         finally:
             os.environ.pop("FAKE_GWS_API_ERROR", None)
 
@@ -350,7 +361,11 @@ class TestSyncPipeline(unittest.TestCase):
             code = sync.run_sync(self._cfg(), gws_path=str(self.fake), state_path=self.state_path,
                                  check_auth=False)
             self.assertEqual(code, 2)
-            self.assertEqual(self.state_path.read_text(), good)
+            state = json.loads(self.state_path.read_text())
+            good_state = json.loads(good)
+            self.assertEqual(state["events"], good_state["events"])
+            self.assertEqual(state["syncStatus"]["state"], "auth")
+            self.assertEqual(validate_state(state), [])
         finally:
             os.environ.pop("FAKE_GWS_EVENT_AUTH", None)
 
