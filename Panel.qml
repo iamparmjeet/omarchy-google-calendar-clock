@@ -127,7 +127,8 @@ Panel {
     return false
   }
   function setCenterHoverRevealSuppressed(value) {
-    if (root.bar && "centerHoverRevealSuppressed" in root.bar) root.bar.centerHoverRevealSuppressed = value
+    if (root.bar && typeof root.bar.setCenterHoverRevealSuppressed === "function") root.bar.setCenterHoverRevealSuppressed(value)
+    else if (root.bar && "centerHoverRevealSuppressed" in root.bar) root.bar.centerHoverRevealSuppressed = value
   }
   function refresh() { root.today = new Date(); root.goToToday() }
 
@@ -678,6 +679,7 @@ Panel {
           Text {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
             text: root.syncStale ? "⚠ " + root.syncLabel : "✓ " + root.syncLabel
             textFormat: Text.PlainText
             color: root.syncStale ? Color.urgent : Qt.darker(root.contentForeground, 1.8)
