@@ -25,6 +25,11 @@ Rectangle {
   readonly property var dayEvents: viewMode === "month" || viewMode === "week"
     ? Model.visibleEventsOn(eventIndex, selectedKey, hiddenCalendars)
     : []
+  // Tasks never enter the event index, so the day card needs them separately
+  // (same source the TASKS pill uses, already open/closed-filtered).
+  readonly property var dayTasks: (viewMode === "month" || viewMode === "week")
+    ? Model.tasksForDate(tasks, selectedKey)
+    : []
   readonly property var summary: Model.upcomingSummary(eventIndex, todayKey, 14, hiddenCalendars, 8)
 
   width: parent.width
@@ -62,9 +67,21 @@ Rectangle {
         }
       }
       Text {
-        visible: card.dayEvents.length === 0
+        visible: card.dayEvents.length === 0 && card.dayTasks.length === 0
         width: parent.width; text: "No events on this day."
         color: Qt.darker(card.foreground, 1.8); font.family: card.fontFamily; font.pixelSize: Style.font.bodySmall; font.italic: true
+      }
+      // Due tasks on the selected day. Single-Text rows (no in-Row anchors)
+      // so the Row-layout warning the event rows just shed does not return.
+      Repeater {
+        model: card.dayTasks
+        Text {
+          required property var modelData
+          width: parent.width; elide: Text.ElideRight
+          text: "󰄳 " + modelData.title
+          textFormat: Text.PlainText
+          color: card.foreground; font.family: card.fontFamily; font.pixelSize: Style.font.bodySmall
+        }
       }
     }
 

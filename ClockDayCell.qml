@@ -13,6 +13,7 @@ Rectangle {
   required property color foreground
   required property string fontFamily
   property var cellEvents: []          // visible events on this day
+  property bool hasTasks: false        // open tasks due this day -> one accent dot
   property var dotColor                // function(ev) -> color
 
   signal chosen(string key)
@@ -44,6 +45,7 @@ Rectangle {
       model: cell.cellEvents.slice(0, 4)
       Rectangle { required property var modelData; width: Style.space(5); height: Style.space(5); radius: width / 2; color: cell.dotColor(modelData) }
     }
+    Rectangle { visible: cell.hasTasks; width: Style.space(5); height: Style.space(5); radius: width / 2; color: Color.accent }
   }
 
   MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: cell.chosen(cell.day.key) }

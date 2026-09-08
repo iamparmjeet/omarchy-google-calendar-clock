@@ -21,7 +21,7 @@ It is a clone of the built-in `omarchy.clock` (the same date/time label, calenda
 
 **What you see in the screenshots:**
 
-- **Month** (`MONTH` pill): 6-row month grid with ISO week numbers (W), week-start toggle, month stepping `‹ ›`, and coloured dots per day (up to 4) tinted by calendar colour. Selected day is highlighted; today has a border. Bottom card shows the agenda for `FRIDAY, AUGUST 21`.
+- **Month** (`MONTH` pill): 6-row month grid with ISO week numbers (W), week-start toggle, month stepping `‹ ›`, and coloured dots per day (up to 4 event dots tinted by calendar colour, plus one accent dot when tasks are due). Selected day is highlighted; today has a border. Bottom card shows the agenda for `FRIDAY, AUGUST 21` plus any tasks due that day.
 - **Week** (`WEEK` pill): Header `W33 · Aug 16 — Aug 22, 2026` with `‹ ›` stepping. Each day is a full-width row with date rail (`16 · Aug` + `Today`/`Tomorrow`/`Yesterday`) and up to 3 event chips (`all day`/`HH:MM` + title). Free days show `— Free —`.
 - **Upcoming** (`UPCOMING` pill): `UPCOMING — NEXT 14 DAYS` grouped by date, plus `NEXT 14 DAYS — SUMMARY` card at the bottom.
 - **Tasks** (`TASKS` pill): Header `TASKS [ ] open · [x] closed` with `closed` toggle. Each task has `[ ]`/`[x]` checkbox, title, `due YYYY-MM-DD`/`no due`, and delete. Stale toggle is off by default (only open tasks).
@@ -206,6 +206,9 @@ but only the bounded display window is indexed.
 
 ## Security And Robustness
 
+Release `1.3.2` shows due tasks on day surfaces: the month/week day card lists
+tasks due the selected day, and month-grid cells gain an accent dot on days
+with due tasks (tasks previously appeared only in the TASKS pill and badge).
 Release `1.3.1` surfaces sync failures in the panel: a failed run keeps the
 cached events usable but stamps its status into the cache, so the footer
 warns (e.g. `Auth expired — run: gws auth login --services calendar,tasks`)

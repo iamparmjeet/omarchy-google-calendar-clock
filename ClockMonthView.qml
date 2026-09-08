@@ -16,6 +16,7 @@ Column {
   required property string todayKey
   required property var eventIndex
   required property var hiddenCalendars
+  required property var tasks              // open/closed-filtered, for task dots
   required property color foreground
   required property string fontFamily
   required property string nextWeekStartLabel
@@ -84,6 +85,7 @@ Column {
               day: modelData
               isSelected: modelData.key === view.selectedKey
               cellEvents: Model.visibleEventsOn(view.eventIndex, modelData.key, view.hiddenCalendars)
+              hasTasks: Model.tasksForDate(view.tasks, modelData.key).length > 0
               foreground: view.foreground
               fontFamily: view.fontFamily
               dotColor: view.dotColor

@@ -529,6 +529,7 @@ Panel {
                   todayKey: root.todayKey
                   eventIndex: root.eventIdx
                   hiddenCalendars: root.hiddenCalendars
+                  tasks: root.filteredTasks
                   foreground: root.contentForeground
                   fontFamily: root.contentFontFamily
                   nextWeekStartLabel: root.nextWeekStartLabel
