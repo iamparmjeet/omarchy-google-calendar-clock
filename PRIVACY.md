@@ -24,6 +24,9 @@ and Tasks APIs. No other Google user data is requested or accessed.
   for profiling or analytics, and never used to train models. The app's
   use of information received from Google APIs adheres to the Google API
   Services User Data Policy, including the Limited Use requirements.
+- No AI processing: your Google user data is never sent to any
+  third-party AI service, aggregator, gateway, or model, and no AI model
+  — self-hosted or otherwise — is used anywhere in this app.
 
 ## Sharing, transfer, and disclosure of Google user data
 
