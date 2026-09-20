@@ -11,7 +11,7 @@ Pipeline:
     -> window (pastDays / futureDays)
     -> events.list per calendar (singleEvents=true, orderBy=startTime)
     -> tasks.list per list (due window)
-    -> normalize -> dedupe -> sort -> validate
+    -> normalize -> dedupe -> dedupe_content -> sort -> validate
     -> merge syncStatus
     -> atomic write (tmp -> fsync -> rename)
 
@@ -136,6 +136,75 @@ def dedupe(events: list[dict]) -> list[dict]:
             continue
         seen.add(key)
         out.append(ev)
+    return out
+
+
+def _content_key(ev: dict):
+    """Merge key for content-identical events, or None when it must not merge."""
+    title = ev.get("title")
+    start, end = ev.get("start"), ev.get("end")
+    calendar_id = ev.get("calendarId")
+    if not all(isinstance(v, str) for v in (title, start, end, calendar_id)):
+        return None
+    folded = " ".join(title.split()).casefold()
+    if not folded or not start:
+        return None
+    return (calendar_id, bool(ev.get("allDay")), start, end, folded)
+
+
+def _winner_rank(ev: dict):
+    event_id = ev.get("id") if isinstance(ev.get("id"), str) else ""
+    description = ev.get("description") if isinstance(ev.get("description"), str) else ""
+    return (
+        event_id.startswith("_"),      # native ids before imported "_" ids
+        not ev.get("meetUrl"),         # then one that carries a meeting link
+        -len(description),             # then the fullest description
+        event_id,                      # then smallest id, so the pick is stable
+    )
+
+
+def _distinct_places(group: list[dict]) -> bool:
+    """True when the group names two different rooms or two different links."""
+    for field in ("location", "meetUrl"):
+        seen = {
+            " ".join(ev[field].split()).casefold()
+            for ev in group
+            if isinstance(ev.get(field), str) and ev[field].strip()
+        }
+        if len(seen) > 1:
+            return True
+    return False
+
+
+def dedupe_content(events: list[dict]) -> list[dict]:
+    """Merge same-calendar events that differ only by id.
+
+    An import, a Gmail-created event and an invitation can land as three
+    separate Google events with identical calendar, times and title. They are
+    collapsed to one deterministic winner, which gains ``duplicateCount``.
+    Events on different calendars, with different times, or with a blank
+    title are never merged; nor is a group that names two different locations
+    or meeting links, which is two real bookings rather than one echoed.
+    """
+    groups: dict = {}
+    order: list = []
+    for index, ev in enumerate(events):
+        key = _content_key(ev) if isinstance(ev, dict) else None
+        if key is None:
+            key = ("__unique__", index)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(ev)
+    out: list[dict] = []
+    for key in order:
+        group = groups[key]
+        if len(group) == 1 or _distinct_places(group):
+            out.extend(group)
+            continue
+        winner = dict(min(group, key=_winner_rank))
+        winner["duplicateCount"] = len(group)
+        out.append(winner)
     return out
 
 
@@ -466,7 +535,7 @@ def run_sync(
         else:
             pool.shutdown(wait=True)
 
-        events = _cap(sort_events(dedupe(events)), MAX_STATE_EVENTS, "events")
+        events = _cap(sort_events(dedupe_content(dedupe(events))), MAX_STATE_EVENTS, "events")
         tasks = _cap(sort_tasks(tasks), MAX_STATE_TASKS, "tasks")
 
         state = build_state(
