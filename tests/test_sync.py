@@ -143,6 +143,72 @@ class TestDedupeSort(unittest.TestCase):
         ]
         self.assertEqual(sync.dedupe(evs), [{"id": "ok", "calendarId": "one"}])
 
+    def test_dedupe_content_merges_triple_on_one_calendar(self):
+        evs = [self._ev("_imp"), self._ev("bbb"), self._ev("ccc", title="  weekly   SYNC ")]
+        out = sync.dedupe_content(evs)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["duplicateCount"], 3)
+        self.assertEqual(out[0]["id"], "bbb")
+        self.assertNotIn("duplicateCount", evs[1])  # inputs are not mutated
+
+    def test_dedupe_content_keeps_two_calendars(self):
+        out = sync.dedupe_content([self._ev("a"), self._ev("b", calendarId="other")])
+        self.assertEqual(len(out), 2)
+        self.assertTrue(all("duplicateCount" not in ev for ev in out))
+
+    def test_dedupe_content_never_merges_blank_titles(self):
+        evs = [self._ev("a", title=""), self._ev("b", title="   ")]
+        self.assertEqual(sync.dedupe_content(evs), evs)
+
+    def test_dedupe_content_tie_picks_smallest_id(self):
+        out = sync.dedupe_content([self._ev("zed"), self._ev("abc"), self._ev("mid")])
+        self.assertEqual([ev["id"] for ev in out], ["abc"])
+
+    def test_dedupe_content_winner_order(self):
+        out = sync.dedupe_content([
+            self._ev("aaa"),
+            self._ev("zzz", meetUrl="https://meet.example.com/x"),
+            self._ev("_a", meetUrl="https://meet.example.com/x", description="long" * 10),
+        ])
+        self.assertEqual(out[0]["id"], "zzz")
+        out = sync.dedupe_content([self._ev("aaa"), self._ev("bbb", description="notes")])
+        self.assertEqual(out[0]["id"], "bbb")
+
+    def test_dedupe_content_different_end_untouched(self):
+        evs = [self._ev("a"), self._ev("b", end="2026-08-20T11:00:00+00:00")]
+        self.assertEqual(sync.dedupe_content(evs), evs)
+
+    def test_dedupe_content_all_day_flag_and_junk(self):
+        evs = [self._ev("a"), self._ev("b", allDay=True), {"id": "c", "title": None}, "junk"]
+        self.assertEqual(sync.dedupe_content(evs), evs)
+
+    def test_dedupe_content_keeps_different_rooms_and_links(self):
+        evs = [self._ev("a", location="Room A"), self._ev("b", location="Room B")]
+        self.assertEqual(sync.dedupe_content(evs), evs)
+        evs = [self._ev("a", meetUrl="https://meet.example.com/x"),
+               self._ev("b", meetUrl="https://meet.example.com/y")]
+        self.assertEqual(sync.dedupe_content(evs), evs)
+        # One copy carrying the room and one without is still the same booking.
+        out = sync.dedupe_content([self._ev("a", location=" room  a "), self._ev("b", location="Room A"),
+                                   self._ev("c")])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["duplicateCount"], 3)
+
+    def test_dedupe_content_result_validates(self):
+        from sync.schema import validate_event
+        out = sync.dedupe_content([self._ev("a"), self._ev("b")])
+        self.assertEqual(validate_event(out[0]), [])
+
+    @staticmethod
+    def _ev(event_id, **over):
+        ev = {
+            "id": event_id, "calendarId": "work@example.com", "title": "Weekly sync",
+            "start": "2026-08-20T09:00:00+00:00", "end": "2026-08-20T10:00:00+00:00",
+            "allDay": False, "dateKey": "2026-08-20", "description": "", "meetUrl": "",
+        }
+        ev.update(over)
+        return ev
+
     def test_sort_events_by_datekey(self):
         evs = [{"dateKey": "2026-08-22"}, {"dateKey": "2026-08-20"}]
         self.assertEqual(sync.sort_events(evs)[0]["dateKey"], "2026-08-20")
