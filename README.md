@@ -347,6 +347,29 @@ systemctl --user start parm.clock-sync.service
 (revoked at `myaccount.google.com/permissions`, or the GCP OAuth client is in
 Testing mode where grants expire) — re-login is the fix, nothing is deleted.
 
+**It expires again exactly 7 days later, every week.** That is Google's rule for
+OAuth apps whose publishing status is *Testing*: refresh tokens are revoked
+after 7 days. Re-login works but only for another week. The permanent fix is to
+publish your own per-user app — no verification review is needed for a personal
+app under 100 users:
+
+1. GCP console → **Google Auth Platform → Branding**: fill in *Application home
+   page* and *Application privacy policy link*, and add their domain under
+   *Authorized domains*, then **Save**. Any public page you control works (a
+   Markdown file in a public GitHub repo with `github.com` as the domain is
+   enough). **Do not upload a logo** — a logo forces a verification review.
+   *Publish app* stays greyed out until these are saved.
+2. **Audience → Publish app → Confirm.** Status becomes *In production*. Ignore
+   the "submit for verification" hint and never press *Prepare for verification*.
+3. Log in once more (`gws auth login --services calendar,tasks`). Tokens issued
+   while in Testing are not upgraded. Expect the "Google hasn't verified this
+   app" screen (**Advanced → Go to …**), tick **both** the Calendar and Tasks
+   boxes, and press **Continue** at the bottom.
+
+The same step is documented by [rclone](https://rclone.org/drive/#making-your-own-client-id)
+and [Home Assistant](https://www.home-assistant.io/integrations/google/) for
+their Google integrations.
+
 **New events go to the wrong calendar.** The panel writes to the calendar Google marks `primary` (never a read-only holiday calendar). Verify with `gws calendar calendarList list --params '{}'`.
 
 **Badge shows a stale count.** The timer syncs every 15 minutes by default; force one with `systemctl --user start parm.clock-sync.service`, or click the sync button (`↻`) in the panel header. Check the timer is active:
