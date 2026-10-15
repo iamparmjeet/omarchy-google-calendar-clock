@@ -315,7 +315,7 @@ omarchy plugin add https://github.com/iamparmjeet/omarchy-google-calendar-clock.
 ~/.config/omarchy/plugins/parm.clock/scripts/setup.sh --dry-run  # preview without side-effects
 ```
 
-`setup.sh` now prompts before installing dependencies and shows the right env (`node`, `npm`, `cargo`, `pacman`, `PATH`). The automatic npm path downloads `@googleworkspace/cli@0.22.5` once, verifies its published SHA-512 integrity value, and installs that exact local tarball. Automatic AUR and Cargo paths are opt-in (`--allow-aur` / `--allow-cargo`) because their build inputs are not independently verified by this plugin. Setup also records a SHA-256 pin for the selected `gws` executable and skips `gws auth setup` when already authenticated.
+`setup.sh` now prompts before installing dependencies and shows the right env (`node`, `npm`, `cargo`, `pacman`, `PATH`). The automatic npm path downloads `@googleworkspace/cli@0.22.5` once, verifies its published SHA-512 integrity value, and installs that exact local tarball. Automatic AUR and Cargo paths are opt-in (`--allow-aur` / `--allow-cargo`) because their build inputs are not independently verified by this plugin. Setup also records a SHA-256 pin for the selected `gws` executable and skips `gws auth setup` when already authenticated. Before login it strips stray whitespace from `~/.config/gws/client_secret.json` (a `gws auth setup` bug that causes `401 invalid_client`), and the generated systemd unit pins a sandbox-safe python plus a mise-shim-free `PATH` so the timer works on mise-managed machines.
 
 ---
 
@@ -363,6 +363,8 @@ journalctl --user -u parm.clock-sync.service -n 30
 ```
 
 If the journal shows `mise ERROR Read-only file system`, the unit was rendered with mise-shimmed `python3`/`node`, which cannot start under the service sandbox (`ProtectSystem=strict` + `ProtectHome=read-only`). That covers gws too: it is a `#!/usr/bin/env node` script, so a shimmed `node` kills every gws call even when the python interpreter is fine. Re-running the current `setup.sh` picks a sandbox-safe system python (`/usr/bin/python3`) and a shim-free `PATH` (real `node`) automatically.
+
+**The same holiday/event shows twice.** Regional holiday calendars (`en.indian#holiday@…` vs `en-in.indian#holiday@…`) share Google event ids, so each observance arrives once per subscribed calendar. The sync collapses same `(event id, day)` records to one automatically — nothing to configure. Genuinely distinct events (different ids, or recurring instances on different days) are never merged.
 
 **OAuth consent shows `Error 401: invalid_client / The OAuth client was not found`.** Check the auth URL: if `client_id=` starts with `%20` or ends with `%20`, your `~/.config/gws/client_secret.json` has leading/trailing whitespace (a `gws auth setup` bug). `setup.sh` now strips it automatically — re-run it, or fix by hand:
 
