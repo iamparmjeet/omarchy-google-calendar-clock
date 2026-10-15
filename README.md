@@ -362,6 +362,8 @@ systemctl --user status parm.clock-sync.service
 journalctl --user -u parm.clock-sync.service -n 30
 ```
 
+If the journal shows `mise ERROR Read-only file system`, the unit was rendered with mise-shimmed `python3`/`node`, which cannot start under the service sandbox (`ProtectSystem=strict` + `ProtectHome=read-only`). That covers gws too: it is a `#!/usr/bin/env node` script, so a shimmed `node` kills every gws call even when the python interpreter is fine. Re-running the current `setup.sh` picks a sandbox-safe system python (`/usr/bin/python3`) and a shim-free `PATH` (real `node`) automatically.
+
 **OAuth consent shows `Error 401: invalid_client / The OAuth client was not found`.** Check the auth URL: if `client_id=` starts with `%20` or ends with `%20`, your `~/.config/gws/client_secret.json` has leading/trailing whitespace (a `gws auth setup` bug). `setup.sh` now strips it automatically — re-run it, or fix by hand:
 
 ```bash
