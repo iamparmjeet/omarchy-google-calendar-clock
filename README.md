@@ -362,6 +362,27 @@ systemctl --user status parm.clock-sync.service
 journalctl --user -u parm.clock-sync.service -n 30
 ```
 
+If the journal shows `mise ERROR Read-only file system`, the unit was rendered with mise-shimmed `python3`/`node`, which cannot start under the service sandbox (`ProtectSystem=strict` + `ProtectHome=read-only`). That covers gws too: it is a `#!/usr/bin/env node` script, so a shimmed `node` kills every gws call even when the python interpreter is fine. Re-running the current `setup.sh` picks a sandbox-safe system python (`/usr/bin/python3`) and a shim-free `PATH` (real `node`) automatically.
+
+**OAuth consent shows `Error 401: invalid_client / The OAuth client was not found`.** Check the auth URL: if `client_id=` starts with `%20` or ends with `%20`, your `~/.config/gws/client_secret.json` has leading/trailing whitespace (a `gws auth setup` bug). `setup.sh` now strips it automatically — re-run it, or fix by hand:
+
+```bash
+python3 - ~/.config/gws/client_secret.json <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+for k in ("client_id", "client_secret", "project_id"):
+    v = d["installed"].get(k)
+    if isinstance(v, str):
+        d["installed"][k] = v.strip()
+json.dump(d, open(p, "w"), indent=2)
+open(p, "a").write("\n")
+PY
+gws auth login --services calendar,tasks
+```
+
+Also verify `project_id` in that file matches the GCP project that actually owns the OAuth client (the numeric prefix of `client_id` is that project's project *number*: compare with `gcloud projects describe <project-id> --format="json(projectId,projectNumber)"`). If they differ, fix `project_id` and re-login. If the URL is clean and it still fails, the OAuth client was deleted or lives in a different project — recreate it (Desktop type) under your real project and re-run `gws auth setup --project <real-project-id>`.
+
 **OAuth consent is rejected.** Your GCP OAuth client is in Testing mode and your account is not a test user. Add it under GCP → APIs & Services → OAuth consent screen → Test users.
 
 **gws write fails with a keyring/dbus error.** gws stores tokens in the system keyring; ensure a keyring daemon is running in your session (e.g. gnome-keyring) before the first `gws auth login`.

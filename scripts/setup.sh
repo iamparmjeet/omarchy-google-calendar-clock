@@ -343,6 +343,35 @@ ensure_auth() {
   fi
 
   info "Checking authentication state…"
+  # gws 0.22.5 `auth setup` has been observed writing client_secret.json with
+  # leading/trailing whitespace around client_id (and a stale project_id when
+  # setup was retried with different --project values). That produces an auth
+  # URL like `client_id=%20…%20` and Google rejects it with
+  # `Error 401: invalid_client / The OAuth client was not found`.
+  # Sanitize before login so the failure is fixed, not just retried.
+  if ! $DRY_RUN && [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/gws/client_secret.json" ]]; then
+    python3 - "${XDG_CONFIG_HOME:-$HOME/.config}/gws/client_secret.json" <<'PY'
+import json, re, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    doc = json.load(fh)
+inst = doc.get("installed", doc)
+changed = False
+for key in ("client_id", "client_secret", "project_id"):
+    val = inst.get(key)
+    if isinstance(val, str) and val != val.strip():
+        inst[key] = val.strip()
+        changed = True
+cid = inst.get("client_id", "")
+if not re.fullmatch(r"[0-9]+-[A-Za-z0-9_.-]+\.apps\.googleusercontent\.com", cid or ""):
+    print(f"WARNING: client_id {cid!r} does not look like a Desktop OAuth client id", file=sys.stderr)
+if changed:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2)
+        fh.write("\n")
+    print("sanitized whitespace in gws client_secret.json")
+PY
+  fi
   if $DRY_RUN; then
     echo "   would run: $GWS_PATH auth status"
   elif "$GWS_PATH" auth status 2>/dev/null | grep -q '"auth_method": "oauth2"'; then
@@ -462,12 +491,45 @@ first_sync() {
 install_systemd() {
   info "Installing systemd user units…"
 
-  local python_bin
-  python_bin="$(command -v python3)"
+  # Resolve a sandbox-safe python. The service runs under
+  # ProtectSystem=strict + ProtectHome=read-only, where mise shims die with
+  # "mise ERROR Read-only file system" before python even starts (so the
+  # timer fails while a manual terminal sync works). Prefer a real system
+  # interpreter; never embed a mise shim path in the unit.
+  local python_bin=""
+  local candidate
+  for candidate in /usr/bin/python3 "$(command -v python3 2>/dev/null || true)"; do
+    [[ -n "$candidate" && -x "$candidate" ]] || continue
+    candidate="$(readlink -f -- "$candidate")"
+    case "$candidate" in
+      */mise/*) continue ;;
+    esac
+    if "$candidate" -c 'import json, zoneinfo' 2>/dev/null; then
+      python_bin="$candidate"
+      break
+    fi
+  done
+  [[ -n "$python_bin" ]] || die "no sandbox-safe python3 found (mise shims cannot run under the systemd sandbox; install system python3)"
+  # Resolve a sandbox-safe node for gws (`#!/usr/bin/env node`): mise shims
+  # die with "Read-only file system" under ProtectSystem=strict, so the unit
+  # needs a PATH whose `node` is a real binary.
+  local node_dir=""
+  local node_candidate
+  for node_candidate in /usr/bin/node /usr/local/bin/node; do
+    if [[ -x "$node_candidate" ]]; then node_dir="$(dirname -- "$node_candidate")"; break; fi
+  done
+  if [[ -z "$node_dir" ]]; then
+    # Fall back to a real mise-installed node (installs/, never shims/).
+    node_candidate="$(ls -d "$HOME"/.local/share/mise/installs/node/*/bin/node 2>/dev/null | sort -V | tail -1 || true)"
+    if [[ -n "$node_candidate" && -x "$node_candidate" ]]; then
+      node_dir="$(dirname -- "$(readlink -f -- "$node_candidate")")"
+    fi
+  fi
+  [[ -n "$node_dir" ]] || die "no sandbox-safe node found (mise shims cannot run under the systemd sandbox; install system nodejs)"
   local sync_path="$SYNC_DIR/sync.py"
 
-  if [[ "$python_bin$sync_path" == *$'\n'* || "$python_bin$sync_path" == *%* ]]; then
-    die "python or plugin path contains a newline or '%'; choose a simpler install path"
+  if [[ "$python_bin$sync_path$node_dir" == *$'\n'* || "$python_bin$sync_path$node_dir" == *%* ]]; then
+    die "python, node, or plugin path contains a newline or '%'; choose a simpler install path"
   fi
 
   systemd_quote() {
@@ -504,6 +566,11 @@ Type=oneshot
 # stack several, so the whole sync gets 10 minutes before systemd reaps it.
 # (The state file stays last-good either way — writes are atomic.)
 ExecStart=$(systemd_quote "$python_bin") $(systemd_quote "$sync_path")
+# mise shims (python, node) die with "Read-only file system" under this
+# sandbox, so PATH exposes only real system binaries (notably a working
+# `node` for gws's `#!/usr/bin/env node`); the interpreters are absolute
+# paths resolved at install time.
+Environment=PATH=$node_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 TimeoutStartSec=600
 Nice=10
 NoNewPrivileges=yes

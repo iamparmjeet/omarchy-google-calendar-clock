@@ -123,9 +123,19 @@ def filter_tasklists(tasklists: list[dict], cfg: dict) -> list[dict]:
 
 
 def dedupe(events: list[dict]) -> list[dict]:
-    """Remove duplicate events within a calendar, keeping the first record."""
+    """Remove duplicate events, keeping one record per event instance.
+
+    Pass 1 collapses exact (calendarId, id) repeats (e.g. overlapping fetch
+    windows hitting the same calendar twice). Pass 2 collapses the same
+    Google event surfacing from several subscribed calendars: regional
+    holiday calendars (``en.indian#holiday@…`` vs ``en-in.indian#holiday@…``)
+    share event ids, so every observance would otherwise render twice.
+    Recurring instances are unaffected — each instance carries its own date.
+    The winner is deterministic (smallest calendarId), independent of fetch
+    order.
+    """
     seen: set[tuple[str, str]] = set()
-    out: list[dict] = []
+    unique: list[dict] = []
     for ev in events:
         event_id = ev.get("id")
         calendar_id = ev.get("calendarId")
@@ -135,6 +145,18 @@ def dedupe(events: list[dict]) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
+        unique.append(ev)
+    winner_index: dict[tuple[str, str], int] = {}
+    out: list[dict] = []
+    for ev in unique:
+        date_key = ev.get("dateKey")
+        key = (ev["id"], date_key if isinstance(date_key, str) else "")
+        if key in winner_index:
+            idx = winner_index[key]
+            if str(ev.get("calendarId") or "") < str(out[idx].get("calendarId") or ""):
+                out[idx] = ev
+            continue
+        winner_index[key] = len(out)
         out.append(ev)
     return out
 
