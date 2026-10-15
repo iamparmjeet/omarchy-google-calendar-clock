@@ -343,6 +343,35 @@ ensure_auth() {
   fi
 
   info "Checking authentication state…"
+  # gws 0.22.5 `auth setup` has been observed writing client_secret.json with
+  # leading/trailing whitespace around client_id (and a stale project_id when
+  # setup was retried with different --project values). That produces an auth
+  # URL like `client_id=%20…%20` and Google rejects it with
+  # `Error 401: invalid_client / The OAuth client was not found`.
+  # Sanitize before login so the failure is fixed, not just retried.
+  if ! $DRY_RUN && [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/gws/client_secret.json" ]]; then
+    python3 - "${XDG_CONFIG_HOME:-$HOME/.config}/gws/client_secret.json" <<'PY'
+import json, re, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as fh:
+    doc = json.load(fh)
+inst = doc.get("installed", doc)
+changed = False
+for key in ("client_id", "client_secret", "project_id"):
+    val = inst.get(key)
+    if isinstance(val, str) and val != val.strip():
+        inst[key] = val.strip()
+        changed = True
+cid = inst.get("client_id", "")
+if not re.fullmatch(r"[0-9]+-[A-Za-z0-9_.-]+\.apps\.googleusercontent\.com", cid or ""):
+    print(f"WARNING: client_id {cid!r} does not look like a Desktop OAuth client id", file=sys.stderr)
+if changed:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2)
+        fh.write("\n")
+    print("sanitized whitespace in gws client_secret.json")
+PY
+  fi
   if $DRY_RUN; then
     echo "   would run: $GWS_PATH auth status"
   elif "$GWS_PATH" auth status 2>/dev/null | grep -q '"auth_method": "oauth2"'; then
