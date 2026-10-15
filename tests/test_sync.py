@@ -129,10 +129,27 @@ class TestDedupeSort(unittest.TestCase):
         ]
         self.assertEqual(len(sync.dedupe(evs)), 2)
 
-    def test_dedupe_keeps_same_id_from_different_calendars(self):
+    def test_dedupe_collapses_same_event_across_calendars(self):
+        # Regional holiday calendars share Google event ids
+        # (en.indian#holiday@… vs en-in.indian#holiday@…): the same
+        # observance on the same day must render once, with a
+        # fetch-order-independent winner.
         evs = [
-            {"id": "same", "calendarId": "attacker"},
-            {"id": "same", "calendarId": "primary"},
+            {"id": "hol", "calendarId": "en-in.indian#holiday@group.v.calendar.google.com",
+             "dateKey": "2026-10-19", "title": "Maha Ashtami"},
+            {"id": "hol", "calendarId": "en.indian#holiday@group.v.calendar.google.com",
+             "dateKey": "2026-10-19", "title": "Maha Ashtami"},
+        ]
+        self.assertEqual(sync.dedupe(list(reversed(evs))), sync.dedupe(evs))
+        self.assertEqual(len(sync.dedupe(evs)), 1)
+
+    def test_dedupe_keeps_same_id_on_different_days(self):
+        # Recurring instances carry per-instance ids, so distinct days are
+        # distinct records even when mirrored across calendars.
+        evs = [
+            {"id": "base_20261019T090000Z", "calendarId": "primary", "dateKey": "2026-10-19"},
+            {"id": "base_20261026T090000Z", "calendarId": "primary", "dateKey": "2026-10-26"},
+            {"id": "base_20261019T090000Z", "calendarId": "shared", "dateKey": "2026-10-19"},
         ]
         self.assertEqual(len(sync.dedupe(evs)), 2)
 
